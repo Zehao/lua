@@ -1,4 +1,3 @@
+###Programming in Lua (Third Edition)
 
-===Programming in Lua
-(Third Edition)
-Notes of this book:)
+    Notes of this book:)
