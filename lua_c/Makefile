@@ -7,4 +7,4 @@ interpreter:
 stack:
 	gcc -Wall -o $@ $@.c $(LIBS) 	
 clean:
-	rm interpreter
+	rm interpreter stack
