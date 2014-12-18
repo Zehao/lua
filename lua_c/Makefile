@@ -1,7 +1,10 @@
-TARGET = interpreter
+TARGET = 
 INCS = -I/home/hadoop/lua-5.2.0/src
 LIBS = -llua -lm -ldl
-all:
-	gcc -Wall -o $(TARGET) $(TARGET).c $(LIBS) $(INCS)
+interpreter:
+	gcc -Wall -o $@ $@.c $(LIBS) $(INCS)
+
+stack:
+	gcc -Wall -o $@ $@.c $(LIBS) 	
 clean:
-	rm $(TARGET)
+	rm interpreter
