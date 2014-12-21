@@ -149,8 +149,37 @@ local  function parse_object( raw_json_str,tb_res )
 end 
 
 
-local function parse_array( json_str,tb_res )
-	-- body
+local function parse_array( raw_json_str,tb_res )
+	if #raw_json_str == 0 return end
+	json_str= string.match(raw_json_str, "^%s*%[%s*(.*)%s*%]%s*$" ) 
+	local  pos_left = 1
+	while pos_left < #json_str do
+		cur_char = string.sub(json_str,pos_left,pos_left)
+
+		--json object
+		if cur_char=="{" then
+			...
+
+		-- json array
+		elseif cur_char=="[" then
+			...
+
+		-- strings
+		elseif cur_char=='"' then
+			...
+
+		-- true,false,null
+		elseif cur_char=="t" or cur_char=="f" or cur_char=="n" then
+			...
+
+		-- numbers
+		else
+			...
+		end
+
+
+
+	end
 end
 
 
@@ -161,7 +190,7 @@ function Marshal(json_str)
 	--将原始串的回车，换行全部去掉
 	json_str = string.gsub(json_str,"[%c]","")
 
-	--是{还是[开头
+	--判断是{还是[开头
 	str_type = string.match(json_str,"^%s*([\\[{])")
 
 	local tb_res ={}
