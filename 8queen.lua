@@ -1,4 +1,4 @@
-#!/bin/env lua
+#!/usr/bin/env lua
 
 local N=8
 local totalSolutions=0
