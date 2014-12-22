@@ -1,36 +1,12 @@
-#!/usr/bin/env lua
+-- #!/usr/bin/env lua
 
 local M = {}
-
+local  type,pairs,ipairs,table,bit32,string,tonumber,tostring,select,next,error=
+	   type,pairs,ipairs,table,bit32,string,tonumber,tostring,select,next,error
 setmetatable(M, {__index = _G})
 
 _ENV = M
 
---[[
-	make string support subscription,ie, ('abc')[2] == 'b'
-
-assert( getmetatable('').__index == string )
-
-]] 
-local string_mt = getmetatable('')
-local old_index  = string_mt.__index
-string_mt.__index = function ( t,... )
-	local  k = ...
-	if type(...) == 'number' then
-		if k > #t then
-			error('index out of range.')
-		end
-		return old_index.sub(t,k,k)
-	else
-		return old_index[k]
-	end
-end
-
-
--- unicode字符串的字符个数
-local function char_len(str)
-	return #(string.gsub(str,"[\128-\191]",""))
-end 
 
 --[[
 	将utf8编码的unicode字符转换为原始2字节的unicode表示
@@ -41,7 +17,7 @@ end
 function utf8_to_unicode( str )
 
 	-- 将多个字节的utf8值组合成2字节
-	local  function concat_val( ... )
+	local  concat_val = function ( ... )
 		local args = table.pack(...)
 		local res = 0
 		if args.n == 2 then
@@ -54,7 +30,7 @@ function utf8_to_unicode( str )
 			args[3] = bit32.band(args[3],0x3f)
 			res = bit32.bor(bit32.lshift(args[1],12),bit32.lshift(args[2],6),args[3])
 		end
-		return string.format("\\x%02x\\x%02x",bit32.rshift(bit32.band(res,0xff00),8),bit32.band(res,0x00ff))
+		return string.format("\\x%02X\\x%02X",bit32.rshift(bit32.band(res,0xff00),8),bit32.band(res,0x00ff))
 	end
 
 	local res_str = {}
@@ -84,10 +60,13 @@ local parse_array
 local parse_object
 local find_right
 
-
 tb_consts = {["true"]=true, ["false"] = false, ["null"] = nil}
 
-
+--[[
+	找到对应的右括号，包括嵌套的情况
+	输入当前字符，起始位置
+	返回下标或-1
+]]
 find_right =function (str,char,pos)
 	target = "}"
 	if char == "[" then 
@@ -104,10 +83,15 @@ find_right =function (str,char,pos)
 	return -1
 end
 
+--[[
 
+	递归解析以'{'开头，'}'结尾的json字符串
+]]
 parse_object =  function ( raw_json_str,tb_res )
 	--print("parse object,json_str:" .. raw_json_str)
 	if #raw_json_str == 0 then return tb_res end
+
+	-- 提取{}内部分
 	local json_str= string.match(raw_json_str, "^%s*{%s*(.*)%s*}%s*$" )
 	if not json_str then 
 		return nil , "bracket '{','}' not match "
@@ -118,17 +102,21 @@ parse_object =  function ( raw_json_str,tb_res )
     local pos_left = 1
     local key
     local value
+
+    -- 查找每一项k,v并判断类型
 	while pos_left <= #json_str do
 		--print("POSITION:" .. pos_left .. " OF " .. #json_str)
 		local key_left,key_right,key = string.find(json_str,"\"(.-)\"%s*:%s*",pos_left)
 		if key_left == nil then return nil,'wrong json string,expected "key": ' end
 
-		--unicode-- key = utf8_to_unicode(key)
+		--unicode-- 
+		key = utf8_to_unicode(key)
 
 		local value_left_pos = key_right+1
 		local value_left_char = string.sub(json_str,value_left_pos,value_left_pos)
 		local value_right_pos
 
+		--true,false,null
 		if value_left_char == "t" or value_left_char == "f" or value_left_char == "n" then  
 			value_left_pos,value_right_pos,value = string.find(json_str,"(%a*)",value_left_pos)
 			if value ~= "true" and value ~="false" and value ~= "null" then
@@ -142,17 +130,17 @@ parse_object =  function ( raw_json_str,tb_res )
 			if value_right_pos == -1 then
 				return nil,"bracket '{', '}' not match"
 			end
-			local value,message = parse_object(string.sub(json_str,value_left_pos,value_right_pos),{})
+			local value,message = parse_object(string.sub(json_str,value_left_pos,value_right_pos),{})  --recursively
 			if message then return nil,message end
 			tb_res[key] = value
 
 		-- []
-		elseif value_left_char =="[" then                             ---- []
+		elseif value_left_char =="[" then
 			value_right_pos = find_right(json_str,value_left_char,value_left_pos)
 			if value_right_pos == -1 then
 				return nil,"bracket '[', ']' not match"
 			end
-			local value ,message = parse_array(string.sub(json_str,value_left_pos,value_right_pos),{})
+			local value ,message = parse_array(string.sub(json_str,value_left_pos,value_right_pos),{})  --for array
 			if message then return nil,message end
 			tb_res[key] = value
 
@@ -162,7 +150,9 @@ parse_object =  function ( raw_json_str,tb_res )
 			if not value_left_pos then
 				return nil,"expected double quoted string for key:" .. key
 			end
-			--unicode--  tb_res[key] = utf8_to_unicode (value)
+			--unicode--  
+			value = utf8_to_unicode (value)
+
 			tb_res[key] = value
 
 		-- numbers
@@ -187,9 +177,12 @@ parse_object =  function ( raw_json_str,tb_res )
 
 	return tb_res
 end 
+
+
 --[[
-	
-	注意有nil的情况，不能使用table.insert。如 [nil,1,nil,1]插入后变为{[1]=1,[2]=1},应为{[2]=1,[4]=1}
+	解析json数组格式字符串
+
+	注意有nil的情况，不能使用table.insert。如 [null,1,null,1]插入后变为{[1]=1,[2]=1},应为{[2]=1,[4]=1}
 
 ]]
 parse_array = function( raw_json_str,tb_res )
@@ -218,7 +211,7 @@ parse_array = function( raw_json_str,tb_res )
 			if pos_right == -1 then
 				return nil,"bracket '{', '}' not match"
 			end
-			tb_res[tb_index] = parse_object(string.sub(json_str,pos_left,pos_right) , {} )
+			tb_res[tb_index] = parse_object(string.sub(json_str,pos_left,pos_right) , {} ) -- for object
 
 		-- json array
 		elseif cur_char=="[" then
@@ -226,15 +219,17 @@ parse_array = function( raw_json_str,tb_res )
 			if pos_right == -1 then
 				return nil,"bracket '[', ']' not match"
 			end
-			tb_res[tb_index] = parse_array(string.sub(json_str,pos_left,pos_right), {} )
+			--recursively
+			tb_res[tb_index] = parse_array(string.sub(json_str,pos_left,pos_right), {} ) 
 
 		-- strings
 		elseif cur_char=='"' then
 			pos_tmp,pos_right,value = string.find(json_str,"\"(.-)\"",pos_left)
 			if not pos_tmp then
-				return nil,"expected double quoted string near" .. string.sub(json_str,pos_left,pos_left+2)
+				return nil,"expected double quoted string near " .. string.sub(json_str,pos_left,pos_left+2)
 			end
-			--unicode--   value = utf8_to_unicode(value)
+			--unicode--   
+			value = utf8_to_unicode(value)
 			tb_res[tb_index] = value
 
 		-- true,false,null
@@ -271,8 +266,11 @@ end
 
 
 function Marshal(json_str)
-	if json_str == nil or json_str == "" then
-		return nil,"null input"
+	if json_str == nil then
+		return nil
+	end
+	if json_str == "" then
+		return ""
 	end
 	--将原始串的回车，换行全部去掉
 	json_str = string.gsub(json_str,"[%c]","")
@@ -281,12 +279,31 @@ function Marshal(json_str)
 	str_type = string.match(json_str,"^%s*([\\[{])")
 
 	local tb_res ={}
+	local message
 	if str_type == "{" then
 		tb_res,message = parse_object(json_str,tb_res)
+
 	elseif str_type == "[" then
 		tb_res,message = parse_array(json_str,tb_res)
+
+
+	-- true,false,null,number,string
 	else 
-		return nil,"{ or [ expected"
+		local val = string.match(json_str,"^%s*(.-)%s*$")  --去掉首尾空格
+		if val == "true" then
+			return true
+		elseif val == "false" then 
+			return false
+		elseif val == "null" then
+			return nil
+		elseif tonumber(val) then
+			return tonumber(val)
+		elseif string.sub(val,1,1) == "\"" then
+		    local tmp_l,tmp_r,value = string.find(val,"\"(.-)\"",1)
+		    return value
+		else
+			return nil,"error json format"
+		end
 	end
 
 	return tb_res,message
@@ -300,7 +317,8 @@ local encode_array
 
 
 --[[
-	判断是否为array形式的table,注意table中的key可能有浮点形式
+	判断是否为array形式的table,即key都是number且为整数，且大于0
+
 	否，返回false
 	是，返回true和最大的index ( 等同于table.maxn)
 ]]
@@ -321,6 +339,12 @@ is_array_table = function(tb)
 end
 
 
+--[[
+	对数组形式的table进行编码
+	输入table和table中最大的index
+	输出json字符串
+
+]]
 encode_array = function(tb,max_index)
 	local encoded_str = "["
 	for k = 1,max_index do
@@ -350,8 +374,14 @@ end
 
 
 
+--[[
+
+	对kv形式的table进行编码
+]]
+
 encode_table = function(tb)
 
+	-- table is {}, not nil
 	if next(tb) == nil then
 		return "{}"
 	end
@@ -387,11 +417,19 @@ encode_table = function(tb)
 end
 
 function Unmarshal(lua_val)
-	if type(lua_val) ~= "table" then
-		return nil,"expecting table input"
-	end
+	value_type = type(lua_val)
 
-	return encode_table(lua_val)
+	if value_type == "nil" then
+		return "null"
+	elseif value_type == "number" or value_type == "boolean" then
+		return tostring(lua_val)
+	elseif value_type == "string" then
+		
+		return "\"" .. lua_val .. "\""
+
+	elseif  value_type == "table" then
+		return encode_table(lua_val)
+	end
 end
 
 
