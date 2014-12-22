@@ -59,6 +59,7 @@ end
 local parse_array
 local parse_object
 local find_right
+local find_string
 
 tb_consts = {["true"]=true, ["false"] = false, ["null"] = nil}
 
@@ -68,21 +69,59 @@ tb_consts = {["true"]=true, ["false"] = false, ["null"] = nil}
 	返回下标或-1
 ]]
 find_right =function (str,char,pos)
-	target = "}"
+	local target = "}"
 	if char == "[" then 
 		target = "]"
 	end
 	local count = 1
-	for i = pos+1,#str do
-		if string.sub(str,i,i) == char then count = count +1 end
-		if string.sub(str,i,i) == target then count = count-1 end
-		if count == 0 then
-			return i
+	local i = pos+1
+
+	while i <= #str do
+		local ch = string.sub(str,i,i)
+		if ch == [["]] then
+			local left,right = find_string(str,i)
+			if left == -1 then return -1 end
+			i = right
+		elseif ch == char then
+			count = count + 1
+		elseif ch == target then
+			count = count - 1
+			if count == 0 then return i end
+		end
+		i = i + 1
+	end
+
+	return -1
+end
+
+find_string = function(str,start)
+
+	local escape={["t"]="\t",["n"]="\n",['"']='"',["r"] = "\r"}
+	local res_str={}
+	local i = start
+	local left
+	local count = 0
+	while i<=#str do
+		local ch = string.sub(str,i,i)
+		if ch == [["]] then
+			if count == 0 then 
+				count = count + 1
+				left=i
+				i=i+1 
+			elseif count == 1 then 
+				return left,i ,table.concat(res_str)
+			end
+		elseif ch == [[\]] then
+			local next_char = string.sub(str,i+1,i+1)
+			res_str[#res_str+1] = escape[next_char]
+			i = i + 2
+		else 
+			res_str[#res_str+1] = ch
+			i = i+1
 		end
 	end
 	return -1
 end
-
 --[[
 
 	递归解析以'{'开头，'}'结尾的json字符串
@@ -106,16 +145,24 @@ parse_object =  function ( raw_json_str,tb_res )
     -- 查找每一项k,v并判断类型
 	while pos_left <= #json_str do
 		--print("POSITION:" .. pos_left .. " OF " .. #json_str)
-		local key_left,key_right,key = string.find(json_str,"\"(.-)\"%s*:%s*",pos_left)
-		if key_left == nil then return nil,'wrong json string,expected "key": ' end
-
+		--local key_left,key_right,key = string.find(json_str,"\"(.-)\"%s*:%s*",pos_left)
+		local key_left,key_right,key = find_string(json_str,pos_left)
+		if key_left == -1 then return nil,'wrong json string,expected "key": ' end
+		--print("KEY:" .. key)
 		--unicode-- 
 		key = utf8_to_unicode(key)
 
-		local value_left_pos = key_right+1
+		
+		key_left,key_right = string.find(json_str,"^%s*:%s*",key_right+1)
+
+		if not key_left then
+			return nil," ':' expected "
+		end
+
+		local value_left_pos  = key_right + 1
 		local value_left_char = string.sub(json_str,value_left_pos,value_left_pos)
 		local value_right_pos
-
+		--print("VALUE_LEFT_CHAR:" .. value_left_char)
 		--true,false,null
 		if value_left_char == "t" or value_left_char == "f" or value_left_char == "n" then  
 			value_left_pos,value_right_pos,value = string.find(json_str,"(%a*)",value_left_pos)
@@ -146,8 +193,8 @@ parse_object =  function ( raw_json_str,tb_res )
 
 		-- string
 		elseif value_left_char == '"' then
-			value_left_pos,value_right_pos,value = string.find(json_str,"\"(.-)\"",value_left_pos)
-			if not value_left_pos then
+			value_left_pos,value_right_pos,value = find_string(json_str,value_left_pos)
+			if value_left_pos == -1 then
 				return nil,"expected double quoted string for key:" .. key
 			end
 			--unicode--  
@@ -197,36 +244,36 @@ parse_array = function( raw_json_str,tb_res )
 		return tb_res 
 	end
 
-	local  pos_left = 1
-	local pos_right
+	local  value_left = 1
+	local value_right
 	local pos_tmp
 	local value
 	local tb_index = 1
-	while pos_left <= #json_str do
-		cur_char = string.sub(json_str,pos_left,pos_left)
+	while value_left <= #json_str do
+		cur_char = string.sub(json_str,value_left,value_left)
 
 		--json object
 		if cur_char=="{" then
-			pos_right = find_right(json_str,cur_char,pos_left)
-			if pos_right == -1 then
+			value_right = find_right(json_str,cur_char,value_left)
+			if value_right == -1 then
 				return nil,"bracket '{', '}' not match"
 			end
-			tb_res[tb_index] = parse_object(string.sub(json_str,pos_left,pos_right) , {} ) -- for object
+			tb_res[tb_index] = parse_object(string.sub(json_str,value_left,value_right) , {} ) -- for object
 
 		-- json array
 		elseif cur_char=="[" then
-			pos_right = find_right(json_str,cur_char,pos_left)
-			if pos_right == -1 then
+			value_right = find_right(json_str,cur_char,value_left)
+			if value_right == -1 then
 				return nil,"bracket '[', ']' not match"
 			end
 			--recursively
-			tb_res[tb_index] = parse_array(string.sub(json_str,pos_left,pos_right), {} ) 
+			tb_res[tb_index] = parse_array(string.sub(json_str,value_left,value_right), {} ) 
 
 		-- strings
 		elseif cur_char=='"' then
-			pos_tmp,pos_right,value = string.find(json_str,"\"(.-)\"",pos_left)
-			if not pos_tmp then
-				return nil,"expected double quoted string near " .. string.sub(json_str,pos_left,pos_left+2)
+			value_left,value_right,value = find_string(json_str,value_left)
+			if -1 == value_left then
+				return nil,"expected double quoted string near " .. string.sub(json_str,value_left,value_left+3)
 			end
 			--unicode--   
 			value = utf8_to_unicode(value)
@@ -234,30 +281,30 @@ parse_array = function( raw_json_str,tb_res )
 
 		-- true,false,null
 		elseif cur_char=="t" or cur_char=="f" or cur_char=="n" then
-			pos_tmp,pos_right,value = string.find(json_str,"(%a*)",pos_left)
+			value_left,value_right,value = string.find(json_str,"(%a*)",value_left)
 			if (value ~= "true") and (value ~="false") and (value ~= "null") then
 				return nil, value .. " is not a valid value"
 			end
 			tb_res[tb_index] = tb_consts[value]
 		-- numbers
 		else
-			pos_tmp,pos_right,value = string.find(json_str,"([^,%s]+)",pos_left)
-			if not pos_tmp then
-				return nil, "expected numbers near " .. string.sub(json_str,pos_left,pos_left+2)
+			value_left,value_right,value = string.find(json_str,"([^,%s]+)",value_left)
+			if not value_left then
+				return nil, "expected numbers near " .. string.sub(json_str,value_left,value_left+3)
 			end
 			value = tonumber(value)
 			if not value then
-				return nil,"not a valid string/number near " .. string.sub(json_str,pos_left,pos_left+2)
+				return nil,"not a valid string/number near " .. string.sub(json_str,value_left,value_left+2)
 			end
 			tb_res[tb_index] =  value
 		end
 
-		--print("pos_right:" .. json_str:sub(pos_right))
-		pos_right = pos_right + 1
-		if pos_right > #json_str then break end
-		pos_tmp,pos_right = string.find(json_str,"[%s,]*",pos_right)
+		--print("value_right:" .. json_str:sub(value_right))
+		value_right = value_right + 1
+		if value_right > #json_str then break end
+		pos_tmp,value_right = string.find(json_str,"[%s,]*",value_right)
 
-		pos_left = pos_right + 1
+		value_left = value_right + 1
 		tb_index = tb_index + 1
 	end
 
@@ -314,7 +361,7 @@ end
 local is_array_table
 local encode_table
 local encode_array
-
+local encode_str
 
 --[[
 	判断是否为array形式的table,即key都是number且为整数，且大于0
@@ -353,7 +400,7 @@ encode_array = function(tb,max_index)
 		if value_type =="number" or value_type == "boolean" then
 			tmp_str = tostring(tb[k]) 
 		elseif value_type == "string" then
-			tmp_str = "\"" .. tb[k] .. "\""
+			tmp_str = string.format("%q",tb[k])
 		elseif value_type == "nil" then
 			tmp_str = "null"
 		elseif value_type== "table" then
@@ -398,12 +445,12 @@ encode_table = function(tb)
 
 		-- if value_type == "function"
 
-		local tmp_str = "\"" .. k .. "\":"
+		local tmp_str = string.format("%q",k) .. ":"
 
 		if value_type == "number" or value_type == "boolean" then
 			tmp_str = tmp_str .. tostring(v)
 		elseif value_type == "string" then
-			tmp_str = tmp_str .."\"" .. v .. "\""
+			tmp_str = tmp_str .. string.format("%q",v)
 		elseif value_type == "table" then
 			tmp_str = tmp_str .. encode_table(v)
 		end
@@ -416,8 +463,28 @@ encode_table = function(tb)
 
 end
 
+encode_str = function(str )
+	local res_str = {}
+
+	res_str[#res_str+1] = [["]]
+	for i = 1,#str do
+		local ch = string.sub(str,i,i)
+		if ch == [["]] then
+			res_str[#res_str+1] = [[\"]]
+		elseif ch == "\n" then
+			res_str[#res_str+1] = [[\n]]
+		elseif ch == "\t" then
+			res_str[#res_str+1] = [[\t]]
+		else
+			res_str[#res_str+1]=ch
+		end
+	end
+	res_str[#res_str+1] = [["]]
+	return table.concat(res_str)
+end
+
 function Unmarshal(lua_val)
-	value_type = type(lua_val)
+	local value_type = type(lua_val)
 
 	if value_type == "nil" then
 		return "null"
@@ -425,7 +492,7 @@ function Unmarshal(lua_val)
 		return tostring(lua_val)
 	elseif value_type == "string" then
 		
-		return "\"" .. lua_val .. "\""
+		return string.format("%q",lua_val)
 
 	elseif  value_type == "table" then
 		return encode_table(lua_val)

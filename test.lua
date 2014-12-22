@@ -3,10 +3,10 @@ json = require("json")
 json_str1 = [[
 
 	{
-		"test":1 ,
+		"te\"st":1 ,
 		"test2":2   ,
 		"金泽豪":"呵呵",
-		"又一个table" : { "tb1":-1e-3, "tb2":2E2}   ,  
+		"又一个\ttable" : { "tb1":-1e-3, "tb2":2E2}   ,  
 
 		"array": [true,true,false]
 	}
@@ -50,35 +50,35 @@ json_str6 = [[
 ]]
 
 
--- not valid
+
 json_str7 = [[
 
-	[true,  1  ,"abc","嘿嘿", false , null ,true,"tb":{}]
+	{"key1":"[null, 12, null, 13], {\"/\":\"div\"}"}
 
 ]]
 
--- not valid
+
 json_str8 = [[
 
-	 [null,1,nul,1]
+	 {"key1":"value1", "key2":"value2:\"orz\"", "key3":[{"key1":250}, {"key2":25.5}] }
 
 ]]
 
 json_str9 = [[
 [
     {
-        "name": "Michael",
-        "age": 20,
-        "address": {
+        "n\t\"ame": "Michael",
+        "a\nge": 20,
+        "ad\tdress": {
             "Long_name": "4long",
-            "short_name": "4short"
+            "short_\"\"name": "4short"
         }
     },
     {
         "name": "Mike",
         "age": 21,
         "address": {
-            "Long_name": "1lo\"ng",
+            "Long_name": "1lo,}]ng",
             "short_name": "1short"
         }
     }
@@ -86,6 +86,32 @@ json_str9 = [[
 
 ]]
 
+
+json_str10 = [[
+
+    {
+        "name":    "Mi}chael",
+        "age": 20
+    }
+
+
+]]
+
+
+json_str11=[[
+{
+	"log":"info", "pc":"0x77c16e5a", "type":"T_MOV_M2R_PROPAG", "addr":"0x031ed430", 
+"size":4, "value":1198595772, "thread":250, "ins":"mov ecx, dword ptr [edx]",
+ "sym":{"img":"msvcrt.dll", "func":"memchr", "off":"0x5a"},
+  "tags":[
+  {"byte":0, "tags":["1-4"] },
+  {"byte":1, "tags":["1-3"] },
+  {"byte":2, "tags":["1-2", "1-3"] },
+  {"byte":3, "tags":["1-1"] }
+  ]
+}
+
+]]
 
 -- 按不同缩进递归打印table
 local function print_table( tb ,level)
@@ -117,12 +143,12 @@ tb5={-8,8,8,8,{},tb1,{tb1},tb4}
 
  tab,message = json.Marshal(json_str9)
 
- if message then print(message) ;return; end
+-- print(tab,message)
 
-if type(tab) ~="table" then print(type(tab) , "|" .. tostring(tab) .. "|") 
-else
- print_table(tab)
-end
+-- if type(tab) ~="table" then print(type(tab) , "|" .. tostring(tab) .. "|") 
+-- else
+--  print_table(tab)
+-- end
 
--- res_str = json.Unmarshal("")
--- print(res_str)
+res_str = json.Unmarshal(tab)
+print(res_str)
