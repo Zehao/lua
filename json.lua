@@ -1,13 +1,67 @@
 -- #!/usr/bin/env lua
 
 local M = {}
-local  type,pairs,ipairs,table,bit32,string,tonumber,tostring,select,next,error,setmetatable=
-	   type,pairs,ipairs,table,bit32,string,tonumber,tostring,select,next,error,setmetatable
+local  type,pairs,ipairs,table,bit32,string,tonumber,tostring,select,next,error,setmetatable,math=
+	   type,pairs,ipairs,table,bit32,string,tonumber,tostring,select,next,error,setmetatable,math
+
+
 setmetatable(M, {__index = _G})
 
 _ENV = M
 
+bit32={
+tobin= function(dec)
+	local bits = {}
+	for i = 1,32 do
+		bits[#bits+1] = dec%2
+		dec = math.floor(dec/2)
+	end
+	return bits
+end
+,
+todec=function( bin )
+	local res = bin[1]
+	for i = 2,32 do
+		res = res + bin[i]*2^(i-1)
+	end
+	return res
+end
+,
+band = function (left,right)
+	local bin_left,bin_right = bit32.tobin(left), bit32.tobin(right)
+	local res_bin={}
+	for i = 1,32 do
+		if bin_left[i] == 1 and bin_right[i] == 1 then  
+			res_bin[i] = 1
+		else  
+			res_bin[i] = 0
+		end
+	end
+	return bit32.todec(res_bin)
+end
+,
+bor=function ( left,right )
+	local bin_left,bin_right = bit32.tobin(left), bit32.tobin(right)
+	local res_bin={}
+	for i = 1,32 do 
+		if bin_left[i] == 0 and bin_right[i] == 0 then
+			res_bin[i] = 0
+		else 
+			res_bin[i] = 1
+		end
+	end
+	return bit32.todec(res_bin)
+end
+,
+lshift=function ( value, count)
+	return value*(2^count)
+end
+,
+rshift = function (value,count )
+	return math.floor(value/(2^count))
+end
 
+}
 --[[
 	将utf8编码的unicode字符转换为原始2字节的unicode表示
 
@@ -16,8 +70,11 @@ _ENV = M
 ]]
 function utf8_to_unicode( str )
 
+	--error(tostring(bit32.band))
+
 	-- 将多个字节的utf8值组合成2字节
 	local  concat_val = function ( ... )
+		-- local  bit32 = bit32
 		local args = table.pack(...)
 		local res = 0
 		if args.n == 2 then
@@ -25,12 +82,13 @@ function utf8_to_unicode( str )
 			args[2] = bit32.band(args[2],0x3f)
 			res = bit32.bor(bit32.lshift(args[1],6),args[2])
 		elseif args.n == 3 then
+			-- error(tostring(bit32.band) .." str:" ..str .. "." .. args[1] .. "," .. args[2] .."," ..args[3] .. "type:" .. type(args[1]) .. "," .. type(args[2]) .. "," .. type(args[3])) 
 			args[1] = bit32.band(args[1],0x0f)
 			args[2] = bit32.band(args[2],0x3f)
 			args[3] = bit32.band(args[3],0x3f)
 			res = bit32.bor(bit32.lshift(args[1],12),bit32.lshift(args[2],6),args[3])
 		end
-		return string.format("\\x%02X\\x%02X",bit32.rshift(bit32.band(res,0xff00),8),bit32.band(res,0x00ff))
+		return string.format("\\u%04x",res)
 	end
 
 	local res_str = {}
@@ -53,7 +111,33 @@ function utf8_to_unicode( str )
 			i = i+3
 		end
 	end
+
 	return table.concat(res_str)
+end
+
+--[[
+\u6211\u662f
+]]
+function unicode_to_utf8(byte_str)
+	local res=0
+	for i =1,4 do
+		local ch = tonumber(string.sub(byte_str,i,i),16)
+		res = res + bit32.lshift(ch,16-4*i)
+	end
+	--print(res)
+	if res < 0x80 then
+		return string.char(bit32.band(0x7f,res))
+	elseif res < 0x800 then
+		local b1 = bit32.bor(bit32.band(0x3f,res),0x80)
+		local b2 = bit32.bor(bit32.band(0x1f,bit32.rshift(res,6)),0xc0)
+		return string.char(b2) .. string.char(b1)
+	else
+		local b1 = bit32.bor(bit32.band(0x3f,res),0x80)
+		local b2 = bit32.bor(bit32.band(0x3f,bit32.rshift(res,6)),0x80)
+		local b3 = bit32.bor(bit32.band(0x0f,bit32.rshift(res,12)),0xe0)
+		--print(b1,b2,b3)
+		return string.char(b3) .. string.char(b2) .. string.char(b1)
+	end
 end
 
 local parse_array
@@ -96,10 +180,16 @@ end
 
 
 local escape_from={
+
 	["a"] = "\a", ["b"] = "\b" , ["f"] = "\f", 
 	["n"] = "\n", ["r"] = "\r" , ["t"] = "\t",
 	["v"] = "\v", ["\\"] = "\\" ,
-	 __index=function(t,k) return k end
+	 __index=function(t,k) 
+	 	if k == "u" then
+	 		return "unicode"
+	 	end
+	 	return k 
+	 end
 
  }
 
@@ -120,8 +210,19 @@ find_string = function(str,start)
 			end
 		elseif ch == [[\]] then
 			local next_char = string.sub(str,i+1,i+1)
-			res_str[#res_str+1] = escape_from[next_char]
-			i = i + 2
+			local es = escape_from[next_char]
+			if es == "unicode" then
+				-- error("|" .. str .. "|")
+				-- local ch1 = [[\x]] .. string.upper(string.sub(str,i+2,i+3))
+
+				-- local ch2 = [[\x]] .. string.upper(string.sub(str,i+4,i+5))
+				-- res_str[#res_str+1]   = ch1 .. ch2
+				res_str[#res_str+1] = unicode_to_utf8(string.sub(str,i+2,i+5))
+				i = i + 6
+			else
+				res_str[#res_str+1] = es
+				i = i + 2
+			end
 		else 
 			res_str[#res_str+1] = ch
 			i = i+1
@@ -157,7 +258,7 @@ parse_object =  function ( raw_json_str,tb_res )
 		if key_left == -1 then return nil,'wrong json string,expected "key": ' end
 		--print("KEY:" .. key)
 		--unicode-- 
-		key = utf8_to_unicode(key)
+		-- key = utf8_to_unicode(key)
 
 		
 		key_left,key_right = string.find(json_str,"^%s*:%s*",key_right+1)
@@ -205,7 +306,7 @@ parse_object =  function ( raw_json_str,tb_res )
 				return nil,"expected double quoted string for key:" .. key
 			end
 			--unicode--  
-			value = utf8_to_unicode (value)
+			-- value = utf8_to_unicode (value)
 
 			tb_res[key] = value
 
@@ -283,7 +384,7 @@ parse_array = function( raw_json_str,tb_res )
 				return nil,"expected double quoted string near " .. string.sub(json_str,value_left,value_left+3)
 			end
 			--unicode--   
-			value = utf8_to_unicode(value)
+			-- value = utf8_to_unicode(value)
 			tb_res[tb_index] = value
 
 		-- true,false,null
@@ -483,11 +584,14 @@ local escape_to = {
 	["\a"] = [[\a]] , ["\b"] = [[\b]] , ["\f"] = [[\f]],
 	["\n"] = [[\n]] , ["\r"] = [[\r]] , ["\t"] = [[\t]],
 	["\v"] = [[\v]] , ["\\"] = [[\\]] , ['"'] = [[\"]],
-	__index = function(t,k)  return k end 
+	__index = function(t,k)
+	  	return k 
+	  end 
 }
 
 
 encode_str = function(str )
+	 -- local str =utf8_to_unicode(str)
 	local res_str = {}
 	setmetatable(escape_to,escape_to)
 	res_str[#res_str+1] = [["]]
@@ -501,6 +605,7 @@ end
 
 
 function Unmarshal(lua_val)
+	-- error(tostring(bit32.band))
 	local value_type = type(lua_val)
 
 	if value_type == "nil" then

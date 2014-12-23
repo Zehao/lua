@@ -1,53 +1,94 @@
-find_string = function(str,start)
-	print(str,start)
-	local i = start
-	local left
-	local count = 0
-	while i<#str do
-		local ch = string.sub(str,i,i)
-		if ch == [["]] then
-			if count == 0 then 
-				count = count + 1
-				left=i
-				i=i+1 
-			elseif count == 1 then 
-				return left,i
-			end
-		elseif ch == [[\]] then
-			i = i + 2
+bit32x={
+tobin= function(dec)
+	local bits = {}
+	for i = 1,32 do
+		bits[#bits+1] = dec%2
+		dec = math.floor(dec/2)
+	end
+	return bits
+end
+,
+todec=function( bin )
+	--print(bin)
+	local res = bin[1]
+	for i = 2,32 do
+		res = res + bin[i]*(2^(i-1))
+	end
+	return res
+end
+,
+band = function (left,right)
+	local bin_left,bin_right = bit32x.tobin(left), bit32x.tobin(right)
+	local res_bin={}
+	for i = 1,32 do
+		if (bin_left[i] == 1) and (bin_right[i] == 1) then  
+			res_bin[i] = 1
+		else  
+			res_bin[i] = 0
+		end
+	end
+	return bit32x.todec(res_bin)
+end
+,
+bor=function ( left,right )
+	local bin_left,bin_right = bit32x.tobin(left), bit32x.tobin(right)
+	local res_bin={}
+	for i = 1,32 do 
+		if bin_left[i] == 0 and bin_right[i] == 0 then
+			res_bin[i] = 0
 		else 
-			i = i+1
+			res_bin[i] = 1
 		end
 	end
-	return -1
+	return bit32x.todec(res_bin)
 end
-str = [[{        "name": "Mi}chael",        "age": 20    }]]
-
-find_right =function (str,char,pos)
-	local target = "}"
-	if char == "[" then 
-		target = "]"
+,
+lshift=function ( value, count)
+	local bin_val = bit32x.tobin(value)
+	for i = 32,count+1,-1 do
+		bin_val[i] = bin_val[i-count]
 	end
-	local count = 1
-	local i = pos+1
-
-	while i <= #str do
-		local ch = string.sub(str,i,i)
-		if ch == [["]] then
-			local left,right = find_string(str,i)
-			if left == -1 then return -1 end
-			i = right
-		elseif ch == char then
-			count = count + 1
-		elseif ch == target then
-			count = count - 1
-			if count == 0 then return i end
-		end
-		i = i + 1
+	for i = count,1 do
+		bin_val[i] = 0 
 	end
-
-	return -1
+	return bit32x.todec(bin_val)
+end
+,
+rshift = function (value,count )
+	local bin_val = bit32x.tobin(value)
+	for i = 1,32-count do
+		bin_val[i] = bin_val[i+count]
+	end
+	for i = 32-count+1,32 do
+		bin_val[i] = 0 
+	end
+	return bit32x.todec(bin_val)
 end
 
+}
 
-print( find_right(str,"{",1) )
+
+-- a = bit32.tobin(34)
+-- for _,v in pairs(a) do
+-- 	io.write(v)
+-- end
+-- print()
+-- a=bit32.todec(bit32.tobin(34))
+
+-- a = bit32.band(5,7)
+-- b= bit32.bor ( 199,322)
+
+-- c = bit32.lshift(182,4)
+
+-- -- d = bit32.rshift(3333,3)
+
+res = 25159
+		local b1 = bit32.bor(bit32.band(0x3f,res),0x80)
+		local b2 = bit32.bor(bit32.band(0x3f,bit32.rshift(res,6)),0x80)
+		local b3 = bit32.bor(bit32.band(0x0f,bit32.rshift(res,12)),0xe0)
+
+print(b1,b2,b3)
+		local c1 = bit32x.bor(bit32x.band(0x3f,res),0x80)
+		local c2 = bit32x.bor(bit32x.band(0x3f,bit32x.rshift(res,6)),0x80)
+		local c3 = bit32x.bor(bit32x.band(0x0f,bit32x.rshift(res,12)),0xe0)
+print(c1,c2,c3)

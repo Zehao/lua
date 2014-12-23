@@ -146,16 +146,26 @@ tb4={[-1.2]=88,[3.4]=99,-100,101}
 tb5={-8,a=[[""""""\""""]],8,8,{},tb1,{tb1},tb4}
 
 
+json_str13=[[
+{ 
 
+"\u6211\u662funicode\u7f16\u7801":"\u6211\u662funicode\u7f16\u7801"
 
- tab,message = json.Marshal(json_str12)
+}
+]]
 
---print(tab,message)
+json_str14 = [[
+	"\u6211\u662funicode\u7f16\u7801"
+	
+]]
+ tab,message = json.Marshal(json_str13)
+
+print(tab,message)
 
 if type(tab) ~="table" then print(type(tab) , "|" .. tostring(tab) .. "|") 
 else
  print_table(tab)
 end
 
-res_str = json.Unmarshal(tab)
-print(res_str)
+-- res_str = json.Unmarshal("\xE6\x88\x91\xE6\x98\xAFunicode\xE7\xBC\x96\xE7\xA0\x81")
+-- print(res_str)
