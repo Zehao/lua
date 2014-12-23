@@ -1,8 +1,8 @@
 -- #!/usr/bin/env lua
 
 local M = {}
-local  type,pairs,ipairs,table,bit32,string,tonumber,tostring,select,next,error=
-	   type,pairs,ipairs,table,bit32,string,tonumber,tostring,select,next,error
+local  type,pairs,ipairs,table,bit32,string,tonumber,tostring,select,next,error,setmetatable=
+	   type,pairs,ipairs,table,bit32,string,tonumber,tostring,select,next,error,setmetatable
 setmetatable(M, {__index = _G})
 
 _ENV = M
@@ -11,7 +11,7 @@ _ENV = M
 --[[
 	将utf8编码的unicode字符转换为原始2字节的unicode表示
 
-	例如： "金泽豪test123" 转换为 "\x91\xd1\x6c\xfd\x8c\x6atest123"
+	例如： "金泽豪test123" 转换为 "\x91\xD1\x6C\xFD\x8C\x6Atest123"
 
 ]]
 function utf8_to_unicode( str )
@@ -94,9 +94,18 @@ find_right =function (str,char,pos)
 	return -1
 end
 
+
+local escape_from={
+	["a"] = "\a", ["b"] = "\b" , ["f"] = "\f", 
+	["n"] = "\n", ["r"] = "\r" , ["t"] = "\t",
+	["v"] = "\v", ["\\"] = "\\" ,
+	 __index=function(t,k) return k end
+
+ }
+
 find_string = function(str,start)
 
-	local escape={["t"]="\t",["n"]="\n",['"']='"',["r"] = "\r"}
+	setmetatable(escape_from,escape_from)
 	local res_str={}
 	local i = start
 	local left
@@ -105,15 +114,13 @@ find_string = function(str,start)
 		local ch = string.sub(str,i,i)
 		if ch == [["]] then
 			if count == 0 then 
-				count = count + 1
-				left=i
-				i=i+1 
+				count = count + 1;left=i;i=i+1 
 			elseif count == 1 then 
 				return left,i ,table.concat(res_str)
 			end
 		elseif ch == [[\]] then
 			local next_char = string.sub(str,i+1,i+1)
-			res_str[#res_str+1] = escape[next_char]
+			res_str[#res_str+1] = escape_from[next_char]
 			i = i + 2
 		else 
 			res_str[#res_str+1] = ch
@@ -319,7 +326,7 @@ function Marshal(json_str)
 	if json_str == "" then
 		return ""
 	end
-	--将原始串的回车，换行全部去掉
+	--将原始串的控制字符全部去掉
 	json_str = string.gsub(json_str,"[%c]","")
 
 	--判断是{还是[开头
@@ -345,8 +352,9 @@ function Marshal(json_str)
 			return nil
 		elseif tonumber(val) then
 			return tonumber(val)
-		elseif string.sub(val,1,1) == "\"" then
-		    local tmp_l,tmp_r,value = string.find(val,"\"(.-)\"",1)
+		elseif string.sub(val,1,1) == [["]] then
+		    local tmp_l,tmp_r,value = find_string(val,1)
+		    --value = val
 		    return value
 		else
 			return nil,"error json format"
@@ -400,7 +408,7 @@ encode_array = function(tb,max_index)
 		if value_type =="number" or value_type == "boolean" then
 			tmp_str = tostring(tb[k]) 
 		elseif value_type == "string" then
-			tmp_str = string.format("%q",tb[k])
+			tmp_str = encode_str(tb[k])
 		elseif value_type == "nil" then
 			tmp_str = "null"
 		elseif value_type== "table" then
@@ -445,12 +453,19 @@ encode_table = function(tb)
 
 		-- if value_type == "function"
 
-		local tmp_str = string.format("%q",k) .. ":"
+		local tmp_str
+		if type(k) == "number" then
+			tmp_str = [["]] .. tostring(k) .. [["]]
+		else
+			tmp_str = encode_str(k)
+		end
+
+		tmp_str = tmp_str .. ":"
 
 		if value_type == "number" or value_type == "boolean" then
 			tmp_str = tmp_str .. tostring(v)
 		elseif value_type == "string" then
-			tmp_str = tmp_str .. string.format("%q",v)
+			tmp_str = tmp_str .. encode_str(v)
 		elseif value_type == "table" then
 			tmp_str = tmp_str .. encode_table(v)
 		end
@@ -463,36 +478,42 @@ encode_table = function(tb)
 
 end
 
+
+local escape_to = {
+	["\a"] = [[\a]] , ["\b"] = [[\b]] , ["\f"] = [[\f]],
+	["\n"] = [[\n]] , ["\r"] = [[\r]] , ["\t"] = [[\t]],
+	["\v"] = [[\v]] , ["\\"] = [[\\]] , ['"'] = [[\"]],
+	__index = function(t,k)  return k end 
+}
+
+
 encode_str = function(str )
 	local res_str = {}
-
+	setmetatable(escape_to,escape_to)
 	res_str[#res_str+1] = [["]]
 	for i = 1,#str do
 		local ch = string.sub(str,i,i)
-		if ch == [["]] then
-			res_str[#res_str+1] = [[\"]]
-		elseif ch == "\n" then
-			res_str[#res_str+1] = [[\n]]
-		elseif ch == "\t" then
-			res_str[#res_str+1] = [[\t]]
-		else
-			res_str[#res_str+1]=ch
-		end
+		res_str[#res_str+1]=escape_to[ch]
 	end
 	res_str[#res_str+1] = [["]]
 	return table.concat(res_str)
 end
+
 
 function Unmarshal(lua_val)
 	local value_type = type(lua_val)
 
 	if value_type == "nil" then
 		return "null"
-	elseif value_type == "number" or value_type == "boolean" then
+	elseif value_type == "number" then
+
+		return tostring(lua_val)
+	elseif value_type == "boolean" then
 		return tostring(lua_val)
 	elseif value_type == "string" then
 		
-		return string.format("%q",lua_val)
+		 return encode_str(lua_val)
+		--return lua_val
 
 	elseif  value_type == "table" then
 		return encode_table(lua_val)

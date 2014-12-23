@@ -26,7 +26,7 @@ json_str3 = [[
 
 json_str4 = [[
 
-	[    ]
+	[  true  ]
 
 ]]
 
@@ -113,6 +113,13 @@ json_str11=[[
 
 ]]
 
+
+json_str12 = [[
+
+{"1":-8,"2":8,"3":8,"4":{},"5":{},"6":[{}],"7":{"1":-100,"2":101,"-1.2":88,"3.4":99},"a":"\"\t\"\"\"\"\"\\\"\"\"\""}
+
+]]
+
 -- 按不同缩进递归打印table
 local function print_table( tb ,level)
 	if  tb == nil then return end
@@ -133,22 +140,22 @@ end
 
 
 tb1={}
-tb2={1,3,5,7}
+tb2={1,3,5}
 tb3={a=1,b=2,c=3,d=true,e=false,[1]={}}
 tb4={[-1.2]=88,[3.4]=99,-100,101}
-tb5={-8,8,8,8,{},tb1,{tb1},tb4}
+tb5={-8,a=[[""""""\""""]],8,8,{},tb1,{tb1},tb4}
 
 
 
 
- tab,message = json.Marshal(json_str9)
+ tab,message = json.Marshal(json_str12)
 
--- print(tab,message)
+--print(tab,message)
 
--- if type(tab) ~="table" then print(type(tab) , "|" .. tostring(tab) .. "|") 
--- else
---  print_table(tab)
--- end
+if type(tab) ~="table" then print(type(tab) , "|" .. tostring(tab) .. "|") 
+else
+ print_table(tab)
+end
 
 res_str = json.Unmarshal(tab)
 print(res_str)
