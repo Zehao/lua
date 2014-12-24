@@ -1,7 +1,20 @@
+
+--[[
+
+总结：
+	1.以为json字符串必须是{或[开头的，错误多次
+	2.写unicode到utf8的互相转换，之后发现其实没必要，bit32库也不能使用
+	3.字符串连接".."操作比table.concat慢很多，TLE几次
+	4.test case输入的json字符串有 "\xAA" 其实是不合法的输入,反斜杠后面只能是b,f,n,r,t,u,",/,\  (见ECMA-404)
+	5.多次打error看case的输入了- -
+
+]]
+
+
+
 json = require("json")
 
 json_str1 = [[
-
 	{
 		"te\"st":1 ,
 		"test2":2   ,
@@ -12,31 +25,23 @@ json_str1 = [[
 ]]
 
 json_str2 = [[
-
 	{     }
 
 ]]
 
 json_str3 = [[
-
 	{}
-
 ]]
 
 json_str4 = [[
-
 	[  true  ]
-
 ]]
 
 json_str5 = [[
-
 	[]
-
 ]]
 
 json_str6 = [[
-
 	[true,  1  ,"abc","嘿嘿", false , null ,true,
 		{
 			"test":1 ,
@@ -45,21 +50,18 @@ json_str6 = [[
 			"又一个table" : { "tb1":1, "tb2":2}  
 		}
 	]
-
 ]]
 
 
 
 json_str7 = [[
-
-	{"key1":"[null, 12, null, 13], {\"/\":\"div\"}"}
-
+	{"key1":"[null, 12, null, 13], {\"/\":\"5.6778888\"}"}
 ]]
 
 
 json_str8 = [[
 
-	 {"key1":"value1", "key2":"value2:\"orz\"", "key3":[{"key1":250}, {"key2":25.5}] }
+	 {"key1":"value1", "key2":"value2:\"!@#$%^&*(\"", "key3":[{"key1":250}, {"key2":25.5}] }
 
 ]]
 
@@ -82,7 +84,6 @@ json_str9 = [[
         }
     }
 ]
-
 ]]
 
 
@@ -94,27 +95,18 @@ json_str10 = [[
     }
 ]]
 
-
-json_str11=[[
-{
-	"log":"info", "pc":"0x77c16e5a", "type":"T_MOV_M2R_PROPAG", "addr":"0x031ed430", 
-"size":4, "value":1198595772, "thread":250, "ins":"mov ecx, dword ptr [edx]",
- "sym":{"img":"msvcrt.dll", "func":"memchr", "off":"0x5a"},
-  "tags":[
-  {"byte":0, "tags":["1-4"] },
-  {"byte":1, "tags":["1-3"] },
-  {"byte":2, "tags":["1-2", "1-3"] },
-  {"byte":3, "tags":["1-1"] }
-  ]
-}
-
-]]
-
-
-json_str12 = [[
+json_str11 = [[
 
 {"1":-8,"2":8,"3":8,"4":{},"5":{},"6":[{}],"7":{"1":-100,"2":101,"-1.2":88,"3.4":99},"a":"\"\t\"\"\"\"\"\\\"\"\"\""}
 
+]]
+
+json_str12=[[
+{"/\"\xCA\xFE\xBA\xBE\xAB\x98\xFC\xDE\xBC\xDA\xEFJ`1~!@#$%^&*()_+-=[]{}|;:',./<>?":"A key can be any string"}
+]]
+
+json_str13 = [[
+	"\u6211\u662funicode\u7f16\u7801"
 ]]
 
 -- 按不同缩进递归打印table
@@ -143,29 +135,12 @@ tb4={[-1.2]=88,[3.4]=99,-100,101}
 tb5={-8,a=[[""""""\""""]],8,8,{},tb1,{tb1},tb4}
 
 
-json_str13=[[
-{ 
-
-"\u6211\u662funicode\u7f16\u7801":true
-
-}
-]]
-
-json_str14 = [[
-	"\u6211\u662funicode\u7f16\u7801"
-	
-]]
-
- tab,message = json.Marshal(json_str13)
-
-print(tab,message)
+tab,message = json.Marshal(json_str13)
 
 if type(tab) ~="table" then print(type(tab) , "|" .. tostring(tab) .. "|") 
 else
  print_table(tab)
 end
 
--- res_str = json.Unmarshal("\xE6\x88\x91\xE6\x98\xAFunicode\xE7\xBC\x96\xE7\xA0\x81")
--- print(res_str)
--- res_str = json.Unmarshal(tab)
--- print(res_str)
+res_str = json.Unmarshal(tab)
+print(res_str)

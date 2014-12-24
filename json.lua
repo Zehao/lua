@@ -1,4 +1,4 @@
--- #!/usr/bin/env lua
+#!/usr/bin/env lua
 
 local M = {}
 local  type,pairs,ipairs,table,bit32,string,tonumber,tostring,select,next,error,setmetatable,math=
@@ -9,116 +9,37 @@ setmetatable(M, {__index = _G})
 
 _ENV = M
 
-local count_tc = 0
-
-bit32x={
-tobin= function(dec)
-	local bits = {}
-	for i = 1,32 do
-		bits[#bits+1] = dec%2
-		dec = math.floor(dec/2)
-	end
-	return bits
-end
-,
-todec=function( bin )
-	local res = bin[1]
-	for i = 2,32 do
-		res = res + bin[i]*2^(i-1)
-	end
-	return res
-end
-,
-band = function (left,right)
-	local bin_left,bin_right = bit32.tobin(left), bit32.tobin(right)
-	local res_bin={}
-	for i = 1,32 do
-		if bin_left[i] == 1 and bin_right[i] == 1 then  
-			res_bin[i] = 1
-		else  
-			res_bin[i] = 0
-		end
-	end
-	return bit32.todec(res_bin)
-end
-,
-bor=function ( left,right )
-	local bin_left,bin_right = bit32.tobin(left), bit32.tobin(right)
-	local res_bin={}
-	for i = 1,32 do 
-		if bin_left[i] == 0 and bin_right[i] == 0 then
-			res_bin[i] = 0
-		else 
-			res_bin[i] = 1
-		end
-	end
-	return bit32.todec(res_bin)
-end
-,
-lshift=function ( value, count)
-	return value*(2^count)
-end
-,
-rshift = function (value,count )
-	return math.floor(value/(2^count))
-end
-
-}
-
-function unicode_to_utf8(byte_str)
-	local res=0
-	for i =1,4 do
-		local ch = tonumber(string.sub(byte_str,i,i),16)
-		res = res + bit32.lshift(ch,16-4*i)
-	end
-	--print(res)
-	if res < 0x80 then
-		return string.char(bit32.band(0x7f,res))
-	elseif res < 0x800 then
-		local b1 = bit32.bor(bit32.band(0x3f,res),0x80)
-		local b2 = bit32.bor(bit32.band(0x1f,bit32.rshift(res,6)),0xc0)
-		return string.char(b2) .. string.char(b1)
-	else
-		local b1 = bit32.bor(bit32.band(0x3f,res),0x80)
-		local b2 = bit32.bor(bit32.band(0x3f,bit32.rshift(res,6)),0x80)
-		local b3 = bit32.bor(bit32.band(0x0f,bit32.rshift(res,12)),0xe0)
-		--print(b1,b2,b3)
-		return string.char(b3) .. string.char(b2) .. string.char(b1)
-	end
-end
-
-
-function unicode_to_utf8_2(byte_str)
-	local ch1  = tonumber(string.sub(byte_str,1,2),16)
-	local ch2  = tonumber(string.sub(byte_str,3,4),16)
-	return string.char(ch1) .. string.char(ch2)
-end
-
 local parse_array
 local parse_object
 local find_right
 local find_string
-local find_string2
 
 tb_consts = {["true"]=true, ["false"] = false}
 
 local escape_from={
 
-	["a"] = "\a", ["b"] = "\b" , ["f"] = "\f", 
-	["n"] = "\n", ["r"] = "\r" , ["t"] = "\t",
-	["v"] = "\v", ["\\"] = "\\" ,
-	 __index=function(t,k) 
-	 	if k == "u" then
-	 		return "unicode"
-	 	end
-	 	return k 
-	 end
-
+	["b"] = "\b" , ["f"] = "\f", ["n"] = "\n", ["r"] = "\r" , ["t"] = "\t",
+	["\\"] = "\\" ,['"'] = '"' , ["/"] = "/"
  }
 
+local escape_to = {
+	["\b"] = [[\b]] , ["\f"] = [[\f]],["\n"] = [[\n]] , ["\r"] = [[\r]] , ["\t"] = [[\t]],
+	["\\"] = [[\\]] , ['"'] = [[\"]],
+}
+
+function unicode_to_u(byte_str)
+	local ch1  = tonumber(string.sub(byte_str,1,2),16)
+	local ch2  = tonumber(string.sub(byte_str,3,4),16)
+	return string.char(ch1) .. string.char(ch2)
+end
+
+ --[[
+	获取一个字符串，转义成escape_from中的字符
+	返回  字符串左边下标，右边下标，字符串
+	错误返回-1
+ ]]
 find_string = function(str,start)
 
-	setmetatable(escape_from,escape_from)
 	local res_str={}
 	local i = start
 	local left
@@ -133,12 +54,16 @@ find_string = function(str,start)
 			end
 		elseif ch == [[\]] then
 			local next_char = string.sub(str,i+1,i+1)
-			local es = escape_from[next_char]
-			if es == "unicode" then
-				res_str[#res_str+1] = unicode_to_utf8_2(string.sub(str,i+2,i+5))
+			if next_char == "u" then
+				res_str[#res_str+1] = unicode_to_u(string.sub(str,i+2,i+5))
 				i = i + 6
 			else
-				res_str[#res_str+1] = es
+				local es = escape_from[next_char]
+				if es then
+					res_str[#res_str+1] = es
+				else
+					res_str[#res_str+1] = string.sub(str,i,i+1)
+				end
 				i = i + 2
 			end
 		else 
@@ -149,7 +74,7 @@ find_string = function(str,start)
 	return -1
 end
 
-
+--去掉空格
 local escape_white = function(str,pos )
 	while true do
 		local ch = string.sub(str,pos,pos)
@@ -160,6 +85,7 @@ local escape_white = function(str,pos )
 	end
 	return pos
 end
+
 --[[
 
 	递归解析以'{'开头，'}'结尾的json字符串
@@ -170,8 +96,6 @@ parse_object =  function ( raw_json_str,pos )
 	local tb_res = {}
 
 	while pos <= #raw_json_str do
-		-- print("POSITION:" .. pos .." str:" .. string.sub(raw_json_str,pos,pos+3))
-
 		pos = escape_white(raw_json_str,pos)
 
 		--find key
@@ -311,10 +235,7 @@ function Marshal(json_str)
 	if json_str == "" then
 		return ""
 	end
-	--将原始串的控制字符全部去掉
-	json_str = string.gsub(json_str,"[%c]","")
 
-	if count_tc == 1 then error(json_str) end
 	--判断开头字符
 	local pos = escape_white(json_str,1)
 	local str_type = string.sub(json_str,pos,pos)
@@ -352,7 +273,7 @@ function Marshal(json_str)
 	if tb_res then 
 		return tb_res
 	else
-		return tb_res,message
+		return tb_res,message   --返回nil和错误信息
 	end
 end
 
@@ -391,7 +312,9 @@ end
 
 ]]
 encode_array = function(tb,max_index)
-	local encoded_str = "["
+
+	local encoded_str = {}
+	encoded_str[#encoded_str + 1] = "["
 	for k = 1,max_index do
 		local value_type = type(tb[k])
 		local tmp_str
@@ -406,15 +329,12 @@ encode_array = function(tb,max_index)
 		else  -- must be function ,just ignore it
 			;
 		end
+		encoded_str[#encoded_str + 1] = tmp_str
 
-		encoded_str  = encoded_str .. tmp_str
-
-		if k <max_index then
-			encoded_str = encoded_str .. ","
-		end
+		encoded_str[#encoded_str + 1] = ","
 	end
-	encoded_str = encoded_str .. "]"
-	return encoded_str
+	encoded_str[#encoded_str] = "]"
+	return table.concat(encoded_str)
 end
 
 
@@ -436,57 +356,50 @@ encode_table = function(tb)
 		return encode_array(tb,max_index)
 	end
 
-	local encoded_str="{"
+	local encoded_str={}
+
+	encoded_str[#encoded_str + 1] = "{"
 
 	for k,v in pairs(tb) do
 		local value_type = type(v)
 
 		-- if value_type == "function"
 
-		local tmp_str
 		if type(k) == "number" then
-			tmp_str = [["]] .. tostring(k) .. [["]]
+			encoded_str[#encoded_str + 1]  = [["]] .. tostring(k) .. [["]]
 		else
-			tmp_str = encode_str(k)
+			encoded_str[#encoded_str + 1]  = encode_str(k)
 		end
 
-		tmp_str = tmp_str .. ":"
+		encoded_str[#encoded_str + 1] = ":"
 
 		if value_type == "number" or value_type == "boolean" then
-			tmp_str = tmp_str .. tostring(v)
+			encoded_str[#encoded_str + 1] =  tostring(v)
 		elseif value_type == "string" then
-			tmp_str = tmp_str .. encode_str(v)
+			encoded_str[#encoded_str + 1] =  encode_str(v)
 		elseif value_type == "table" then
-			tmp_str = tmp_str .. encode_table(v)
+			encoded_str[#encoded_str + 1] =  encode_table(v)
 		end
-		encoded_str = encoded_str .. tmp_str .. ","
+		encoded_str[#encoded_str + 1] = ","
 	end
+	encoded_str[#encoded_str] = "}"
 
-	encoded_str = string.sub(encoded_str,1,#encoded_str - 1) .. "}"
-
-	return encoded_str
+	return table.concat( encoded_str)
 
 end
 
-
-local escape_to = {
-	["\a"] = [[\a]] , ["\b"] = [[\b]] , ["\f"] = [[\f]],
-	["\n"] = [[\n]] , ["\r"] = [[\r]] , ["\t"] = [[\t]],
-	["\v"] = [[\v]] , ["\\"] = [[\\]] , ['"'] = [[\"]],
-	__index = function(t,k)
-	  	return k 
-	  end 
-}
-
-
+--对lua字符串编码，将控制字符转义
 encode_str = function(str )
-	 -- local str =utf8_to_unicode(str)
 	local res_str = {}
-	setmetatable(escape_to,escape_to)
 	res_str[#res_str+1] = [["]]
 	for i = 1,#str do
 		local ch = string.sub(str,i,i)
-		res_str[#res_str+1]=escape_to[ch]
+
+		if escape_to[ch] then
+			res_str[#res_str+1]= escape_to[ch]
+		else
+			res_str[#res_str+1]= ch
+		end
 	end
 	res_str[#res_str+1] = [["]]
 	return table.concat(res_str)
