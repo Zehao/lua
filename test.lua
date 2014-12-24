@@ -8,8 +8,7 @@ json_str1 = [[
 		"金泽豪":"呵呵",
 		"又一个\ttable" : { "tb1":-1e-3, "tb2":2E2}   ,  
 
-		"array": [true,true,false]
-	}
+		"array": [true,true,false]}
 ]]
 
 json_str2 = [[
@@ -93,8 +92,6 @@ json_str10 = [[
         "name":    "Mi}chael",
         "age": 20
     }
-
-
 ]]
 
 
@@ -149,7 +146,7 @@ tb5={-8,a=[[""""""\""""]],8,8,{},tb1,{tb1},tb4}
 json_str13=[[
 { 
 
-"\u6211\u662funicode\u7f16\u7801":"\u6211\u662funicode\u7f16\u7801"
+"\u6211\u662funicode\u7f16\u7801":true
 
 }
 ]]
@@ -158,6 +155,7 @@ json_str14 = [[
 	"\u6211\u662funicode\u7f16\u7801"
 	
 ]]
+
  tab,message = json.Marshal(json_str13)
 
 print(tab,message)
@@ -168,4 +166,6 @@ else
 end
 
 -- res_str = json.Unmarshal("\xE6\x88\x91\xE6\x98\xAFunicode\xE7\xBC\x96\xE7\xA0\x81")
+-- print(res_str)
+-- res_str = json.Unmarshal(tab)
 -- print(res_str)

@@ -9,7 +9,9 @@ setmetatable(M, {__index = _G})
 
 _ENV = M
 
-bit32={
+local count_tc = 0
+
+bit32x={
 tobin= function(dec)
 	local bits = {}
 	for i = 1,32 do
@@ -62,62 +64,7 @@ rshift = function (value,count )
 end
 
 }
---[[
-	将utf8编码的unicode字符转换为原始2字节的unicode表示
 
-	例如： "金泽豪test123" 转换为 "\x91\xD1\x6C\xFD\x8C\x6Atest123"
-
-]]
-function utf8_to_unicode( str )
-
-	--error(tostring(bit32.band))
-
-	-- 将多个字节的utf8值组合成2字节
-	local  concat_val = function ( ... )
-		-- local  bit32 = bit32
-		local args = table.pack(...)
-		local res = 0
-		if args.n == 2 then
-			args[1] = bit32.band(args[1],0x1f)
-			args[2] = bit32.band(args[2],0x3f)
-			res = bit32.bor(bit32.lshift(args[1],6),args[2])
-		elseif args.n == 3 then
-			-- error(tostring(bit32.band) .." str:" ..str .. "." .. args[1] .. "," .. args[2] .."," ..args[3] .. "type:" .. type(args[1]) .. "," .. type(args[2]) .. "," .. type(args[3])) 
-			args[1] = bit32.band(args[1],0x0f)
-			args[2] = bit32.band(args[2],0x3f)
-			args[3] = bit32.band(args[3],0x3f)
-			res = bit32.bor(bit32.lshift(args[1],12),bit32.lshift(args[2],6),args[3])
-		end
-		return string.format("\\u%04x",res)
-	end
-
-	local res_str = {}
-	local i = 1
-	while i <= #str do
-		local cur_byte = string.byte(str,i)
-
-		-- 0000 0000-0000 007F | 0xxxxxxx , 1字节
-		if  cur_byte < 0x80 then 
-			res_str[#res_str +1] = string.sub(str,i,i)
-			i = i + 1
-
-		-- 0000 0080-0000 07FF | 110xxxxx 10xxxxxx , 2字节
-		elseif cur_byte < 0xe0 then
-			res_str[#res_str + 1] = concat_val(cur_byte,string.byte(str,i+1))
-			i = i+2
-		-- 0000 0800-0000 FFFF | 1110xxxx 10xxxxxx 10xxxxxx , 3字节
-		elseif cur_byte < 0xf0 then
-			res_str[#res_str + 1] =concat_val(cur_byte,string.byte(str,i+1),string.byte(str,i+2))
-			i = i+3
-		end
-	end
-
-	return table.concat(res_str)
-end
-
---[[
-\u6211\u662f
-]]
 function unicode_to_utf8(byte_str)
 	local res=0
 	for i =1,4 do
@@ -140,44 +87,20 @@ function unicode_to_utf8(byte_str)
 	end
 end
 
+
+function unicode_to_utf8_2(byte_str)
+	local ch1  = tonumber(string.sub(byte_str,1,2),16)
+	local ch2  = tonumber(string.sub(byte_str,3,4),16)
+	return string.char(ch1) .. string.char(ch2)
+end
+
 local parse_array
 local parse_object
 local find_right
 local find_string
+local find_string2
 
-tb_consts = {["true"]=true, ["false"] = false, ["null"] = nil}
-
---[[
-	找到对应的右括号，包括嵌套的情况
-	输入当前字符，起始位置
-	返回下标或-1
-]]
-find_right =function (str,char,pos)
-	local target = "}"
-	if char == "[" then 
-		target = "]"
-	end
-	local count = 1
-	local i = pos+1
-
-	while i <= #str do
-		local ch = string.sub(str,i,i)
-		if ch == [["]] then
-			local left,right = find_string(str,i)
-			if left == -1 then return -1 end
-			i = right
-		elseif ch == char then
-			count = count + 1
-		elseif ch == target then
-			count = count - 1
-			if count == 0 then return i end
-		end
-		i = i + 1
-	end
-
-	return -1
-end
-
+tb_consts = {["true"]=true, ["false"] = false}
 
 local escape_from={
 
@@ -212,12 +135,7 @@ find_string = function(str,start)
 			local next_char = string.sub(str,i+1,i+1)
 			local es = escape_from[next_char]
 			if es == "unicode" then
-				-- error("|" .. str .. "|")
-				-- local ch1 = [[\x]] .. string.upper(string.sub(str,i+2,i+3))
-
-				-- local ch2 = [[\x]] .. string.upper(string.sub(str,i+4,i+5))
-				-- res_str[#res_str+1]   = ch1 .. ch2
-				res_str[#res_str+1] = unicode_to_utf8(string.sub(str,i+2,i+5))
+				res_str[#res_str+1] = unicode_to_utf8_2(string.sub(str,i+2,i+5))
 				i = i + 6
 			else
 				res_str[#res_str+1] = es
@@ -230,89 +148,83 @@ find_string = function(str,start)
 	end
 	return -1
 end
+
+
+local escape_white = function(str,pos )
+	while true do
+		local ch = string.sub(str,pos,pos)
+		if ch ~=" " then
+			break
+		end
+		pos = pos + 1
+	end
+	return pos
+end
 --[[
 
 	递归解析以'{'开头，'}'结尾的json字符串
 ]]
-parse_object =  function ( raw_json_str,tb_res )
-	--print("parse object,json_str:" .. raw_json_str)
-	if #raw_json_str == 0 then return tb_res end
+parse_object =  function ( raw_json_str,pos )
+	if #raw_json_str < pos then return nil end
+	
+	local tb_res = {}
 
-	-- 提取{}内部分
-	local json_str= string.match(raw_json_str, "^%s*{%s*(.*)%s*}%s*$" )
-	if not json_str then 
-		return nil , "bracket '{','}' not match "
-	end
+	while pos <= #raw_json_str do
+		-- print("POSITION:" .. pos .." str:" .. string.sub(raw_json_str,pos,pos+3))
 
-	if  json_str=="" then return tb_res end
+		pos = escape_white(raw_json_str,pos)
 
-    local pos_left = 1
-    local key
-    local value
-
-    -- 查找每一项k,v并判断类型
-	while pos_left <= #json_str do
-		--print("POSITION:" .. pos_left .. " OF " .. #json_str)
-		--local key_left,key_right,key = string.find(json_str,"\"(.-)\"%s*:%s*",pos_left)
-		local key_left,key_right,key = find_string(json_str,pos_left)
-		if key_left == -1 then return nil,'wrong json string,expected "key": ' end
-		--print("KEY:" .. key)
-		--unicode-- 
-		-- key = utf8_to_unicode(key)
-
-		
-		key_left,key_right = string.find(json_str,"^%s*:%s*",key_right+1)
-
-		if not key_left then
-			return nil," ':' expected "
+		--find key
+		local key
+		local ch = string.sub(raw_json_str,pos,pos)
+		local key_left,key_right
+		if ch == [["]] then
+			key_left,key_right,key = find_string(raw_json_str,pos)
+			pos = key_right+1
+		elseif ch == [[}]] then
+			return tb_res,pos
+		else 
+			return nil,"bracket '{','}' not match near " .. string.sub(raw_json_str,pos,pos+5)
 		end
 
-		local value_left_pos  = key_right + 1
-		local value_left_char = string.sub(json_str,value_left_pos,value_left_pos)
-		local value_right_pos
-		--print("VALUE_LEFT_CHAR:" .. value_left_char)
-		--true,false,null
+		-- find ':'
+		key_left,key_right = string.find(raw_json_str,"^%s*:%s*",pos)
+		if key_left == -1 then return nil," ':' expected " end
+
+		pos = key_right+1
+		--print("KEY:" .. key )
+		--find value
+		local value_left_char , value_left_pos , value_right_pos , value ,res
+		value_left_char = string.sub(raw_json_str,pos,pos)
+
+		--true ,false ,null
 		if value_left_char == "t" or value_left_char == "f" or value_left_char == "n" then  
-			value_left_pos,value_right_pos,value = string.find(json_str,"(%a*)",value_left_pos)
+			value_left_pos,value_right_pos,value = string.find(raw_json_str,"(%a*)",pos)
 			if value ~= "true" and value ~="false" and value ~= "null" then
 				return nil,"only true,false or null is valid for key:" .. key
 			end
 			tb_res[key] = tb_consts[value]
-
-		-- {}
-		elseif value_left_char=="{" then 
-			value_right_pos = find_right(json_str,value_left_char,value_left_pos)
-			if value_right_pos == -1 then
-				return nil,"bracket '{', '}' not match"
-			end
-			local value,message = parse_object(string.sub(json_str,value_left_pos,value_right_pos),{})  --recursively
-			if message then return nil,message end
-			tb_res[key] = value
-
-		-- []
-		elseif value_left_char =="[" then
-			value_right_pos = find_right(json_str,value_left_char,value_left_pos)
-			if value_right_pos == -1 then
-				return nil,"bracket '[', ']' not match"
-			end
-			local value ,message = parse_array(string.sub(json_str,value_left_pos,value_right_pos),{})  --for array
-			if message then return nil,message end
-			tb_res[key] = value
-
+		-- json object
+		elseif value_left_char == "{" then
+		    res,value_right_pos = parse_object(raw_json_str,pos+1)
+			if not res then return res,value_right_pos end
+			tb_res[key] = res 
+		-- json array
+		elseif value_left_char == "[" then
+			res,value_right_pos = parse_array(raw_json_str,pos+1)
+			if not res then return res,value_right_pos end
+			tb_res[key] = res 
 		-- string
-		elseif value_left_char == '"' then
-			value_left_pos,value_right_pos,value = find_string(json_str,value_left_pos)
+		elseif value_left_char == [["]] then 
+			value_left_pos,value_right_pos,value = find_string(raw_json_str,pos)
 			if value_left_pos == -1 then
 				return nil,"expected double quoted string for key:" .. key
 			end
-			--unicode--  
-			-- value = utf8_to_unicode (value)
-
 			tb_res[key] = value
-
 		-- numbers
 		else
-			value_left_pos,value_right_pos,value = string.find(json_str,"([^,%s]+)",value_left_pos)
+			value_left_pos,value_right_pos,value = string.find(raw_json_str,"([^%s,%]}]+)",pos)
+			--print(value_left_pos,value_right_pos,value)
 			if not value_left_pos then
 				return nil,"expected numbers for key:" .. key
 			end
@@ -320,100 +232,72 @@ parse_object =  function ( raw_json_str,tb_res )
 			if not value then
 				return nil,"not a valid value for key:" .. key
 			end
+			--print("tonumber:" .. tonumber(value))
 			tb_res[key] = tonumber(value)
 		end
-
-		pos_left = value_right_pos + 1
-		if pos_left > #json_str then break end
-		--print("pos_left:" .. pos_left .. "now:" .. string.sub(json_str,pos_left))
-		pos_left = select(2,string.find(json_str,"[%s,]*",pos_left))
-		pos_left = pos_left + 1
+		-- expected " %s* , %s*" or " %s*}"
+		pos = value_right_pos + 1
+		pos = select(2,string.find(raw_json_str,"[%s,]*",pos)) + 1
 	end
 
 	return tb_res
-end 
+end
 
 
 --[[
 	解析json数组格式字符串
-
 	注意有nil的情况，不能使用table.insert。如 [null,1,null,1]插入后变为{[1]=1,[2]=1},应为{[2]=1,[4]=1}
 
 ]]
-parse_array = function( raw_json_str,tb_res )
-	--print("parse array,json_str:" .. raw_json_str)
-	if #raw_json_str == 0 then return tb_res end
-	local json_str= string.match(raw_json_str, "^%s*%[%s*(.*)%s*%]%s*$" ) 
-	if not json_str then 
-		return nil,"bracket'[',']' not match"
-	end
+parse_array = function( raw_json_str,pos )
 
-	if json_str == "" then 
-		return tb_res 
-	end
-
-	local  value_left = 1
-	local value_right
-	local pos_tmp
-	local value
+	if #raw_json_str < pos  then return nil end
+	local tb_res = {}
 	local tb_index = 1
-	while value_left <= #json_str do
-		cur_char = string.sub(json_str,value_left,value_left)
+	while pos <= #raw_json_str do
 
-		--json object
-		if cur_char=="{" then
-			value_right = find_right(json_str,cur_char,value_left)
-			if value_right == -1 then
-				return nil,"bracket '{', '}' not match"
-			end
-			tb_res[tb_index] = parse_object(string.sub(json_str,value_left,value_right) , {} ) -- for object
+		pos = escape_white(raw_json_str,pos)
 
-		-- json array
-		elseif cur_char=="[" then
-			value_right = find_right(json_str,cur_char,value_left)
-			if value_right == -1 then
-				return nil,"bracket '[', ']' not match"
-			end
-			--recursively
-			tb_res[tb_index] = parse_array(string.sub(json_str,value_left,value_right), {} ) 
+		local ch = string.sub(raw_json_str,pos,pos)
+		local res,value_left_pos, value_right_pos,value
 
-		-- strings
-		elseif cur_char=='"' then
-			value_left,value_right,value = find_string(json_str,value_left)
-			if -1 == value_left then
-				return nil,"expected double quoted string near " .. string.sub(json_str,value_left,value_left+3)
+		if ch == "]" then 
+			return tb_res,pos
+
+		elseif ch == "{" then
+			 res,value_right_pos = parse_object(raw_json_str,pos + 1)
+			 if not res then return nil,value_right_pos end
+			 tb_res[tb_index] = res
+
+		elseif ch == "[" then
+			res,value_right_pos = parse_array(raw_json_str,pos + 1)
+			 if not res then return nil,value_right_pos end
+			 tb_res[tb_index] = res
+
+		elseif ch == [["]] then 
+			value_left_pos,value_right_pos,value = find_string(raw_json_str,pos)
+			if value_left_pos == -1 then
+				return nil,"expected double quoted string for key:" .. key
 			end
-			--unicode--   
-			-- value = utf8_to_unicode(value)
 			tb_res[tb_index] = value
 
-		-- true,false,null
-		elseif cur_char=="t" or cur_char=="f" or cur_char=="n" then
-			value_left,value_right,value = string.find(json_str,"(%a*)",value_left)
+		elseif ch=="t" or ch=="f" or ch=="n" then
+			value_left_pos,value_right_pos,value = string.find(raw_json_str,"(%a*)",pos)
 			if (value ~= "true") and (value ~="false") and (value ~= "null") then
 				return nil, value .. " is not a valid value"
 			end
 			tb_res[tb_index] = tb_consts[value]
-		-- numbers
-		else
-			value_left,value_right,value = string.find(json_str,"([^,%s]+)",value_left)
-			if not value_left then
-				return nil, "expected numbers near " .. string.sub(json_str,value_left,value_left+3)
+
+		else 
+			value_left_pos,value_right_pos,value = string.find(raw_json_str,"([^%s,%]}]+)",pos)
+			if not value_left_pos or (not tonumber(value) ) then
+				return nil,"not a valid string/number near " .. string.sub(raw_json_str,pos,pos+4)
 			end
-			value = tonumber(value)
-			if not value then
-				return nil,"not a valid string/number near " .. string.sub(json_str,value_left,value_left+2)
-			end
-			tb_res[tb_index] =  value
+			tb_res[tb_index]  = tonumber(value)
 		end
-
-		--print("value_right:" .. json_str:sub(value_right))
-		value_right = value_right + 1
-		if value_right > #json_str then break end
-		pos_tmp,value_right = string.find(json_str,"[%s,]*",value_right)
-
-		value_left = value_right + 1
 		tb_index = tb_index + 1
+		pos = value_right_pos + 1
+		pos = select(2,string.find(raw_json_str,"[%s,]*",pos))+1
 	end
 
 	return tb_res
@@ -430,42 +314,47 @@ function Marshal(json_str)
 	--将原始串的控制字符全部去掉
 	json_str = string.gsub(json_str,"[%c]","")
 
-	--判断是{还是[开头
-	str_type = string.match(json_str,"^%s*([\\[{])")
+	if count_tc == 1 then error(json_str) end
+	--判断开头字符
+	local pos = escape_white(json_str,1)
+	local str_type = string.sub(json_str,pos,pos)
 
-	local tb_res ={}
+	local tb_res
 	local message
 	if str_type == "{" then
-		tb_res,message = parse_object(json_str,tb_res)
+		tb_res,message = parse_object(json_str,pos+1)
 
 	elseif str_type == "[" then
-		tb_res,message = parse_array(json_str,tb_res)
+		tb_res,message = parse_array(json_str,pos+1)
 
+	elseif str_type=="t" or str_type=="f" or str_type=="n" then
+		local v_l,v_r,value  = string.find(json_str,"(%a*)",pos)
+			if (value ~= "true") and (value ~="false") and (value ~= "null") then
+				return nil, value .. " is not a valid value"
+			end
+		return  tb_consts[value]
 
-	-- true,false,null,number,string
-	else 
-		local val = string.match(json_str,"^%s*(.-)%s*$")  --去掉首尾空格
-		if val == "true" then
-			return true
-		elseif val == "false" then 
-			return false
-		elseif val == "null" then
-			return nil
-		elseif tonumber(val) then
-			return tonumber(val)
-		elseif string.sub(val,1,1) == [["]] then
-		    local tmp_l,tmp_r,value = find_string(val,1)
-		    --value = val
-		    return value
-		else
-			return nil,"error json format"
+	elseif str_type==[["]] then
+		local v_l,v_r,value = find_string(json_str,pos)
+		if v_l == -1 then
+			return nil,"expected double quoted string"
 		end
+		return value
+
+	else
+		local v_l,v_r,value = string.find(json_str,"([^,%s]+)",pos)
+		if not v_l or (not tonumber(value) ) then
+			return nil,"not a valid string/number"
+		end
+		return tonumber(value)
 	end
 
-	return tb_res,message
+	if tb_res then 
+		return tb_res
+	else
+		return tb_res,message
+	end
 end
-
-
 
 local is_array_table
 local encode_table
@@ -605,7 +494,7 @@ end
 
 
 function Unmarshal(lua_val)
-	-- error(tostring(bit32.band))
+
 	local value_type = type(lua_val)
 
 	if value_type == "nil" then
@@ -624,14 +513,6 @@ function Unmarshal(lua_val)
 		return encode_table(lua_val)
 	end
 end
-
-
-
-
-
-
-
-
 
 return M
 
