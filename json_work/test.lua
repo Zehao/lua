@@ -60,7 +60,6 @@ json_str7 = [[
 
 
 json_str8 = [[
-
 	 {"key1":"value1", "key2":"value2:\"!@#$%^&*(\"", "key3":[{"key1":250}, {"key2":25.5}] }
 
 ]]
@@ -127,6 +126,8 @@ local function print_table( tb ,level)
 end
 
 
+tb={[1]=-12.2e10,nil,"\n\\\t\v"}
+
 
 tb1={}
 tb2={1,3,5}
@@ -135,12 +136,12 @@ tb4={[-1.2]=88,[3.4]=99,-100,101}
 tb5={-8,a=[[""""""\""""]],8,8,{},tb1,{tb1},tb4}
 
 
-tab,message = json.Marshal(json_str13)
+tab,message = json.Marshal([["\n"]])
 
-if type(tab) ~="table" then print(type(tab) , "|" .. tostring(tab) .. "|") 
-else
- print_table(tab)
-end
-
+-- if type(tab) ~="table" then print(type(tab) , "|" .. tostring(tab) .. "|") 
+-- else
+--  print_table(tab)
+-- end
+print( "|" .. tab .. "|")
 res_str = json.Unmarshal(tab)
 print(res_str)
