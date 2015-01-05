@@ -1,0 +1,16 @@
+{
+["root"] =
+		{
+		--["test"] = 3,
+		["Test Pattern String"]=1,
+		["Test obj"] = {["object with 1 member"] = {"array with 1 element"},},
+		["Test enpty obj"] = {},
+		["Test ary"] = {"a", 1 , nil, true, false} ,
+		["Test enpty ary"] = {},
+		["Test ary with obj1"] = {{}},
+		["Test ary with obj2"] = {{},{}},
+		["Test ary with obj3"] = {{}, 1, 2, nil},--[[   
+		[1.0] =3,  ]]
+		['2.0']=4     
+	}
+}
