@@ -7,35 +7,46 @@ var_digits = '0123456789'
 
 var_num_exp = "-+.abcdefABCDEFxX"
 
+escape_from = { 'a':'\a' , 'b': '\b',  'f': '\f',
+                'n': '\n','r': '\r','t': '\t',
+                'v': '\v','"': '\"',"'": '\'','\\': '\\'}
+
+escape_to = { '\a': r'\a' , '\b': r'\b',  '\f': r'\f',
+              '\n': r'\n' , '\r': r'\r','\t': r'\t',
+              '\v': r'\v' , '"': r'\"', "'": r'\'','\\': r'\\'}
+
 const_type = {"nil":None,"true":True,"false":False}
 
 const_type_res = {None:"nil",True:"true",False:"false"}
 
-
 def get_string_with_bracket(raw_string,pos):
     '''
-    获取'[['开头的字符串
+    获取'[['开头的字符串,此类字符串不需要转义
     '''
-    res = raw_string.find("]]",pos)
+    res = raw_string.find("]]",pos+2)
     if res == -1 :
         raise Exception("invalid string")
-    return raw_string[pos:res+2],res+2
+
+    return raw_string[pos+2:res],res+2
 
 def get_string_with_quote(raw_string,pos):
     '''
-    获取引号开头的字符串
+    获取引号开头的字符串,需要转义
     '''
     _pos = pos
     ch = raw_string[pos]
     pos += 1
+    tmp_str = ""
     while pos < len(raw_string):
         if raw_string[pos]=="\\":
+            tmp_str += escape_from.get(raw_string[pos+1],raw_string[pos+1])
             pos += 2
         elif raw_string[pos] == ch :
             break
         else:
+            tmp_str += raw_string[pos]
             pos += 1
-    return  raw_string[_pos+1:pos],pos+1
+    return  tmp_str,pos+1
 
 def get_variable(raw_string,pos):
     '''
@@ -62,17 +73,16 @@ def get_number(raw_string,pos):
     valid_str = var_num_exp + var_digits
 
     while raw_string[pos] in valid_str:
+        if raw_string[pos] == "-" and raw_string[pos+1] == raw_string[pos]:
+            break
         pos += 1
     val = raw_string[_pos:pos]
 
     try:
-        ans =   tonumber(val),pos
+        ans =   eval(val),pos
     except :
         raise Exception(raw_string[_pos:_pos +20])
     return  ans
-
-def tonumber(num_str):
-    return eval(num_str)
 
 def deepcopy(dic):
     if isinstance(dic,list):
@@ -84,7 +94,10 @@ def deepcopy(dic):
                 l.append(v)
         return l
     d = {}
+
     for k,v in dic.items():
+        if k== None or isinstance(k,bool) or isinstance(k,list) or isinstance(k,dict):
+            continue
         if isinstance(v,dict) or isinstance(v,list):
             d[k] = deepcopy(v)
         else:
@@ -107,23 +120,20 @@ def is_valid_sep(s,pos):
 
 def encode_str(s,iskey):
     i=0
-    target="'"
+    target=""
     while i < len(s):
-        if s[i]=="\\":
-            i+=2
-            continue
-        elif s[i]=="'":
-            target='"'
-            break
+        target += escape_to.get(s[i],s[i])
         i+=1
     if iskey:
-        return "[" + target + s + target +"]"
+        target = "['" + target +"']"
     else:
-        return  target + s + target
+        target = "'" + target +"'"
+    return target
+
 
 def checkAndEscapeComment(s,pos):
     '''
-    判断是否为注释并过滤，可以为行注释和块注释
+    判断是否为注释并过滤，可以为行注释和块注释 例如 -- , --[[ xxx ]] , --[===[ xxx ]===]
     '''
     isBlockCmt = False
     if ( s[pos] != '-' ) or (s[pos] != s[pos+1]):
@@ -132,9 +142,8 @@ def checkAndEscapeComment(s,pos):
     #s以--结束
     if pos >= len(s):
         return pos
-
+    equals_cnt = 0
     if s[pos] =='[' :
-        equals_cnt = 0
         pos += 1
         while pos <len(s):
             if s[pos] == '=':
@@ -142,7 +151,7 @@ def checkAndEscapeComment(s,pos):
                 pos += 1
             elif s[pos]=='[':
                 isBlockCmt = True
-                break;
+                break
             elif s[pos]=='\n':
                 return pos+1
             else:
@@ -165,33 +174,31 @@ class PyLuaTblParser:
 
     def __init__(self):
 
-        self.dic =None
-        self.str = None
-
-
+        self._dic =None
 
     def load(self,s):
         assert(len(s) != 0 )
-        self.dic,p = self.parseTable(s,0)
+        self._dic,p = self.parseTable(s,0)
 
 
     def parseTable(self,s,pos):
 
         cur_isList = True
-        keys= list()
-        values=list()
+        cur_dict = {}
         if pos >= len(s):
             raise Exception("error format")
         pos = escapeWhite(s,pos)
         if s[pos] != "{":
             raise Exception("error table")
         pos += 1
-        key = None
+        cur_key = 1
         pos = escapeWhite(s,pos)
         pos = checkAndEscapeComment(s,pos)
         pos = escapeWhite(s,pos)
         while (pos < len(s) and s[pos]!="}"):
             #get key
+            key = None
+            isVariable = False
             pos = escapeWhite(s,pos)
             pos = checkAndEscapeComment(s,pos)
             pos = escapeWhite(s,pos)
@@ -209,7 +216,7 @@ class PyLuaTblParser:
                 pos = checkAndEscapeComment(s,pos)
                 pos = escapeWhite(s,pos)
                 if s[pos] !="]":
-                    raise Exception("error format")
+                    raise Exception("error format" + s[pos:pos+10])
                 pos += 1
 
             elif s[pos] == "{":
@@ -218,12 +225,12 @@ class PyLuaTblParser:
                 key,pos = get_variable(s,pos)
                 if key == "true" or key == "false" or key == "nil":
                     key = const_type[key]
+                else:
+                    isVariable = True
             elif s[pos] in (var_digits+"-"):
                 key,pos = get_number(s,pos)
             else:
                 raise Exception("error key format")
-
-            keys.append(key)
 
             #get separater, ",", or "="
             pos = escapeWhite(s,pos)
@@ -240,6 +247,7 @@ class PyLuaTblParser:
                     value,pos = get_string_with_quote(s,pos)
                 elif s[pos]=="[" and s[pos+1]==s[pos]:
                     value,pos = get_string_with_bracket(s,pos)
+                    #print("value:%s") % value
                 elif s[pos:pos+3]=="nil" and is_valid_sep(s,pos+3):
                     value,pos = None,pos+3
                 elif s[pos:pos+4]=="true" and is_valid_sep(s,pos+4):
@@ -250,27 +258,30 @@ class PyLuaTblParser:
                     value,pos = self.parseTable(s,pos)
                 else:
                     value,pos = get_number(s,pos)
+                if value != None:
+                	cur_dict[key] = value
                 pos = escapeWhite(s,pos)
                 pos = checkAndEscapeComment(s,pos)
                 pos = escapeWhite(s,pos)
+            else:
+            	if isVariable:
+            		pass
+            	else:
+            		cur_dict[cur_key] = key
+                cur_key += 1
+
+
             if s[pos] == ",":
                 pos += 1
                 pos = escapeWhite(s,pos)
                 pos = checkAndEscapeComment(s,pos)
                 pos = escapeWhite(s,pos)
-            values.append(value)
-            #print(key,value)
-
-        if len(keys) == 0:
-            return {},pos+1
+        if len(cur_dict) == 0:
+        	return cur_dict,pos+1
         if cur_isList:
-            return keys,pos+1
+            return cur_dict.values(),pos+1
         else:
-            tmp_tb = {}
-            for i in range(len(keys)):
-                if values[i] :
-                    tmp_tb[keys[i]] = values[i]
-            return tmp_tb,pos+1
+            return cur_dict,pos+1
 
     def encodeTable(self,tb):
         tmp_str="{"
@@ -281,7 +292,7 @@ class PyLuaTblParser:
                 else:
                     tmp_str += "[" + str(k) +"]"
                 tmp_str +="="
-                if isinstance(v,dict) or isinstance(v,list):
+                if isinstance(v,(list,dict)):
                     tmp_str += self.encodeTable(v)
                 elif isinstance(v,bool) or v==None:
                         tmp_str += const_type_res[v]
@@ -292,7 +303,7 @@ class PyLuaTblParser:
                 tmp_str +=","
         elif isinstance(tb,list):
             for v in tb:
-                if isinstance(v,dict) or isinstance(v,list):
+                if isinstance(v,(list,dict)):
                     tmp_str += self.encodeTable(v)
                 elif isinstance(v,bool) or  v==None:
                     tmp_str += const_type_res[v]
@@ -307,50 +318,51 @@ class PyLuaTblParser:
 
 
     def dump(self):
-        return self.str
+        return self.encodeTable(self._dic)
 
 
     def loadLuaTable(self,f):
         _file = open(f,"r")
         input_str = _file.read()
         _file.close()
-        self.dic,p = self.parseTable(input_str,0)
+        self._dic,p = self.parseTable(input_str,0)
 
-####################
 
     def dumpLuaTable(self,f):
         _file = open(f,"w")
-        _file.write(self.encodeTable(self.output_dict))
+        _file.write(self.encodeTable(self._dic))
         _file.close()
-        pass
 
     def loadDict(self,d):
-        assert (isinstance(d,dict))
-        self.input_dict = self.loadDict2(d)
-        self.output_str = self.encodeTable(self.input_dict)
-
-
-    def loadDict2(self,d):
-        tmp_dic={}
-        for k,v in d.items():
-            if k== None or isinstance(k,bool) or isinstance(v,list) or isinstance(k,dict):
-                continue
-            if isinstance(v,dict):
-                tmp_dic[k]=self.loadDict2(v)
-            elif isinstance(v,list):
-                tmp_dic[k]=v[:]
-            else:
-                tmp_dic[k]=v
-        return tmp_dic
-
+        assert (isinstance(d,(dict,list)) )
+        self._dic = deepcopy(d)
 
     def dumpDict(self):
-
-
+    	return deepcopy(self._dic)
 
 if __name__ == '__main__':
-    f = open("read.txt")
-    print(f.read())
+	a1 = PyLuaTblParser()
+	a1.loadLuaTable("read2.txt")
+
+	a2 = PyLuaTblParser()
+	a2.loadDict(a1.dumpDict())
+
+	a2.dumpLuaTable("read_out.txt")
+
+	print(a2.dumpDict() == a1.dumpDict())
+
+	# a3 = PyLuaTblParser()
+	# a3.loadLuaTable("read_out.txt")
+	# print(a1.dumpDict() == a3.dumpDict())
+
+	# s = '''{'/\\"\x08\x0c\n\r\t`1~!@#$%^&*()_+-=[]{}|;:\',./<>?' =555}'''
+	# a4 = PyLuaTblParser()
+	# a4.load(s)
+	# a4.dumpLuaTable("a.txt")
+	# a5 = PyLuaTblParser()
+	# a5.loadLuaTable("a.txt")
+	# print(a4.dumpDict())
+	# print(a5.dumpDict())
 
 
 
