@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 __author__ = 'Zehao'
 
+#变量的合法开头
 var_start = '_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
 var_digits = '0123456789'
-
+#lua中number类型可出现的字符
 var_num_exp = "-+.abcdefABCDEFxX"
 
 escape_from = { 'a':'\a' , 'b': '\b',  'f': '\f',
@@ -16,8 +17,8 @@ escape_to = { '\a': r'\a' , '\b': r'\b',  '\f': r'\f',
               '\v': r'\v' , '"': r'\"', "'": r'\'','\\': r'\\'}
 
 const_type = {"nil":None,"true":True,"false":False}
-
 const_type_res = {None:"nil",True:"true",False:"false"}
+
 
 def get_string_with_bracket(raw_string,pos):
     '''
@@ -26,7 +27,6 @@ def get_string_with_bracket(raw_string,pos):
     res = raw_string.find("]]",pos+2)
     if res == -1 :
         raise Exception("invalid string")
-
     return raw_string[pos+2:res],res+2
 
 def get_string_with_quote(raw_string,pos):
@@ -67,7 +67,7 @@ def get_variable(raw_string,pos):
 
 def get_number(raw_string,pos):
     '''
-    获取数字表示形式：合法的有 123 , -1.23e-3 , 0x11 , 0xa.bp-1 ,
+    获取数字表示形式：合法的有 123 , -1.23e-3 , 0x11 ,0XABCD
     '''
     _pos = pos
     valid_str = var_num_exp + var_digits
@@ -79,16 +79,19 @@ def get_number(raw_string,pos):
     val = raw_string[_pos:pos]
 
     try:
-        ans =   eval(val),pos
+        ans =eval(val),pos
     except :
         raise Exception(raw_string[_pos:_pos +20])
     return  ans
 
 def deepcopy(dic):
+    '''
+    深度拷贝,如果是dict，忽略掉key不是字符串和数字的kv对
+    '''
     if isinstance(dic,list):
         l = []
         for v in dic:
-            if isinstance(v,dict) or isinstance(v,list):
+            if isinstance(v,(dict,list)):
                 l.append(deepcopy(v))
             else:
                 l.append(v)
@@ -96,29 +99,18 @@ def deepcopy(dic):
     d = {}
 
     for k,v in dic.items():
-        if k== None or isinstance(k,bool) or isinstance(k,list) or isinstance(k,dict):
+        if k== None or isinstance(k,(bool,list,dict)):
             continue
-        if isinstance(v,dict) or isinstance(v,list):
+        if isinstance(v,(dict,list)):
             d[k] = deepcopy(v)
         else:
             d[k]=v
     return d
 
-
-def escapeWhite(s,pos):
-    while (pos < len(s)) and s[pos] in " \r\n\t":
-        pos += 1
-    return pos
-
-def is_valid_sep(s,pos):
-    pos = escapeWhite(s,pos)
-    pos = checkAndEscapeComment(s,pos)
-    pos = escapeWhite(s,pos)
-    if s[pos] in ",}":
-        return True
-    return False
-
 def encode_str(s,iskey):
+    '''
+    将python字符串编码输出，需要反转义
+    '''
     i=0
     target=""
     while i < len(s):
@@ -130,18 +122,17 @@ def encode_str(s,iskey):
         target = "'" + target +"'"
     return target
 
-
-def checkAndEscapeComment(s,pos):
+def escapeWhiteAndComment(s,pos):
     '''
-    判断是否为注释并过滤，可以为行注释和块注释 例如 -- , --[[ xxx ]] , --[===[ xxx ]===]
+    去掉空白字符和注释
+    注释可以为行注释和块注释 例如 -- , --[[ xxx ]] , --[===[ xxx ]===]
     '''
-    isBlockCmt = False
+    while (pos < len(s)) and s[pos] in " \r\n\t":
+        pos += 1
     if ( s[pos] != '-' ) or (s[pos] != s[pos+1]):
         return pos
+    isBlockCmt = False
     pos += 2
-    #s以--结束
-    if pos >= len(s):
-        return pos
     equals_cnt = 0
     if s[pos] =='[' :
         pos += 1
@@ -152,22 +143,20 @@ def checkAndEscapeComment(s,pos):
             elif s[pos]=='[':
                 isBlockCmt = True
                 break
-            elif s[pos]=='\n':
-                return pos+1
             else:
                 isBlockCmt = False
                 break
-
     if isBlockCmt:
         sub = "]" + "=" * equals_cnt  + "]"
-        res = s.find(sub,pos)
-        if res == -1 :
-            raise Exception("invalid block comments")
-        return res + len(sub)
     else:
-        while  (pos < len(s)) and s[pos] !='\n' :
-            pos += 1
-        return pos+1
+        sub = "\n"
+    res = s.find(sub,pos)
+    if res == -1 :
+        raise Exception("invalid block comments")
+    pos =  res + len(sub)
+    while (pos < len(s)) and s[pos] in " \r\n\t":
+        pos += 1
+    return pos
 
 
 class PyLuaTblParser:
@@ -182,102 +171,69 @@ class PyLuaTblParser:
 
 
     def parseTable(self,s,pos):
-
         cur_isList = True
         cur_dict = {}
         if pos >= len(s):
             raise Exception("error format")
-        pos = escapeWhite(s,pos)
+        pos = escapeWhiteAndComment(s,pos)
         if s[pos] != "{":
             raise Exception("error table")
-        pos += 1
         cur_key = 1
-        pos = escapeWhite(s,pos)
-        pos = checkAndEscapeComment(s,pos)
-        pos = escapeWhite(s,pos)
+        pos = escapeWhiteAndComment(s,pos+1)
         while (pos < len(s) and s[pos]!="}"):
             #get key
             key = None
-            isVariable = False
-            pos = escapeWhite(s,pos)
-            pos = checkAndEscapeComment(s,pos)
-            pos = escapeWhite(s,pos)
             if s[pos] == "'" or s[pos] == '"':  #quoted string
                 key,pos = get_string_with_quote(s,pos)
             elif s[pos] == "[":
-                pos = escapeWhite(s,pos+1)
-                pos = checkAndEscapeComment(s,pos)
-                pos = escapeWhite(s,pos)
+                pos = escapeWhiteAndComment(s,pos+1)
                 if s[pos] == "'" or s[pos] == '"' :
                     key,pos = get_string_with_quote(s,pos)
                 else:
                     key,pos = get_number(s,pos)
-                pos = escapeWhite(s,pos)
-                pos = checkAndEscapeComment(s,pos)
-                pos = escapeWhite(s,pos)
+                pos = escapeWhiteAndComment(s,pos)
                 if s[pos] !="]":
                     raise Exception("error format" + s[pos:pos+10])
                 pos += 1
-
             elif s[pos] == "{":
                 key,pos = self.parseTable(s,pos)
             elif s[pos] in var_start:
                 key,pos = get_variable(s,pos)
                 if key == "true" or key == "false" or key == "nil":
                     key = const_type[key]
-                else:
-                    isVariable = True
             elif s[pos] in (var_digits+"-"):
                 key,pos = get_number(s,pos)
             else:
                 raise Exception("error key format")
 
             #get separater, ",", or "="
-            pos = escapeWhite(s,pos)
-            pos = checkAndEscapeComment(s,pos)
-            pos = escapeWhite(s,pos)
+            pos = escapeWhiteAndComment(s,pos)
             value = None
-
             if s[pos]=="=":
                 cur_isList = False
-                pos = escapeWhite(s,pos+1)
-                pos = checkAndEscapeComment(s,pos)
-                pos = escapeWhite(s,pos)
+                pos = escapeWhiteAndComment(s,pos+1)
                 if s[pos]=="'" or s[pos]=='"':
                     value,pos = get_string_with_quote(s,pos)
                 elif s[pos]=="[" and s[pos+1]==s[pos]:
                     value,pos = get_string_with_bracket(s,pos)
                     #print("value:%s") % value
-                elif s[pos:pos+3]=="nil" and is_valid_sep(s,pos+3):
-                    value,pos = None,pos+3
-                elif s[pos:pos+4]=="true" and is_valid_sep(s,pos+4):
-                    value,pos = True,pos+4
-                elif s[pos:pos+5]=="false" and is_valid_sep(s,pos+5):
-                    value,pos = False,pos+5
+                elif s[pos] in var_start:
+                    value,pos = get_variable(s,pos)
+                    value = const_type[value]
                 elif s[pos]=="{":
                     value,pos = self.parseTable(s,pos)
                 else:
                     value,pos = get_number(s,pos)
                 if value != None:
-                	cur_dict[key] = value
-                pos = escapeWhite(s,pos)
-                pos = checkAndEscapeComment(s,pos)
-                pos = escapeWhite(s,pos)
+                    cur_dict[key] = value
+                pos = escapeWhiteAndComment(s,pos)
             else:
-            	if isVariable:
-            		pass
-            	else:
-            		cur_dict[cur_key] = key
+                cur_dict[cur_key] = key
                 cur_key += 1
-
-
             if s[pos] == ",":
-                pos += 1
-                pos = escapeWhite(s,pos)
-                pos = checkAndEscapeComment(s,pos)
-                pos = escapeWhite(s,pos)
+                pos = escapeWhiteAndComment(s,pos+1)
         if len(cur_dict) == 0:
-        	return cur_dict,pos+1
+            return cur_dict,pos+1
         if cur_isList:
             return cur_dict.values(),pos+1
         else:
@@ -316,10 +272,8 @@ class PyLuaTblParser:
         tmp_str +="}"
         return tmp_str
 
-
     def dump(self):
         return self.encodeTable(self._dic)
-
 
     def loadLuaTable(self,f):
         _file = open(f,"r")
@@ -338,31 +292,23 @@ class PyLuaTblParser:
         self._dic = deepcopy(d)
 
     def dumpDict(self):
-    	return deepcopy(self._dic)
+        return deepcopy(self._dic)
+
+    def __getitem__(self, item):
+        return self._dic[item]
+
+    def __setitem__(self, key, value):
+        self._dic.update({key:value})
+
+    def update(self, E=None, **F):
+        '''
+            完全等同于dict的update. Update D from dict/iterable E and F
+        '''
+        self._dic.update(E,F)
+
 
 if __name__ == '__main__':
-	a1 = PyLuaTblParser()
-	a1.loadLuaTable("read2.txt")
-
-	a2 = PyLuaTblParser()
-	a2.loadDict(a1.dumpDict())
-
-	a2.dumpLuaTable("read_out.txt")
-
-	print(a2.dumpDict() == a1.dumpDict())
-
-	# a3 = PyLuaTblParser()
-	# a3.loadLuaTable("read_out.txt")
-	# print(a1.dumpDict() == a3.dumpDict())
-
-	# s = '''{'/\\"\x08\x0c\n\r\t`1~!@#$%^&*()_+-=[]{}|;:\',./<>?' =555}'''
-	# a4 = PyLuaTblParser()
-	# a4.load(s)
-	# a4.dumpLuaTable("a.txt")
-	# a5 = PyLuaTblParser()
-	# a5.loadLuaTable("a.txt")
-	# print(a4.dumpDict())
-	# print(a5.dumpDict())
-
-
+    a1 = PyLuaTblParser();
+    a1.loadLuaTable("read2.txt")
+    a1.dumpLuaTable("read_out.txt")
 
